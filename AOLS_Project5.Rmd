@@ -253,3 +253,8 @@ For the heatmap in the paper: The heatmap depicts the combined, preprocessed GO 
 In the paper GO term enrichment analysis was performed for each drug individually using the clusterProfiler R package (v.4.2.2.). Each drug dataset was tested for enrichment of GO terms on all levels (cellular compartment, molecular function and biological process) both in up- and down-regulated proteins with the whole drug dataset as the background. P values were corrected using the FDR approach and the q value cut-off was set to 1. The enrichment results for up-and down-regulation were combined, retaining the more significant entry for duplications. After combining the enrichment results for all drugs, the q values were log transformed, multiplied by −1 for GO terms enriched in down-regulation and z-scored for each GO term individually
 
 A second GO term enrichtment analysis was done(P value cut-off, 0.05; P value correction, FDR approach; Subontology, Molecular Function; whole H. sapiens database as background)
+
+Either clusterProfiler or topGO for GO term enrichtment.
+
+## Other things we could look at
+For the volcano plot displayed in Extended Data Fig. 2b assessing the quantitative reproducibility, the 48 DMSO controls were randomly assigned into two equally sized groups. After median centering normalization of the LFQ intensities of the picked FDR gene group output and filtering for completeness in the dataset, a two-sided Student’s t-test was performed for all 4,694 proteins. P values were corrected for multiple hypothesis testing using the FDR approach using the R package fdrtool (v.1.2.17).
