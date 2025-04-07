@@ -24,7 +24,12 @@ base_packages_to_install <- c(
 my_packages_to_install <- c(
   "conflicted",
   "RCurl",
-  "magrittr"
+  "magrittr",
+  "stringr"
+)
+
+BiocManager_packages_to_install <- c(
+  "clusterProfiler" #GO term enrichment analysis
 )
 
 packages_to_install <- c(base_packages_to_install, my_packages_to_install)
@@ -39,6 +44,16 @@ for (package in packages_to_install) {
 
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
+
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+for (package in BiocManager_packages_to_install) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    BiocManager::install(package)
+  }
+  library(package, character.only = TRUE) 
+}
 ```
 
 ## Data
@@ -148,13 +163,49 @@ doseresponse_norm %<>% bind_rows(zero_values)
 
 ### Example plot
 Here is an example plot reproduction of the article.
-```{r}
+```{r, example}
 doseresponse_norm %>%
-  filter(Genes %in% c("BAG3", "DNAJB1", "DNAJB4", "HSPA1A;HSPA1B"), compound=="Geldanamycin") %>%
+  filter(
+    Genes %in% c("BAG3", "DNAJB1", "DNAJB4", "HSPA1A;HSPA1B"),
+    compound =="Geldanamycin"
+    ) %>%
   ggplot(aes(x=dose, y=value, col=Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
     scale_x_log10()
+```
+
+#### redoing example
+NOTE: I don't see DNAJB1 or DNAJB2 at all:
+```{r}
+doseresponse_norm %>% select(Genes) %>% unique() %>% filter(str_detect(Genes, "DNAJB")) %>% arrange(Genes)
+```
+```{r, adjusted}
+selected_genes <- c("BAG3", "DNAJB11", "DNAJB14", "HSPA1A;HSPA1B")
+selected_compound <- c("Geldanamycin")
+
+doseresponse_norm %>%
+  filter(
+    Genes %in% selected_genes,
+    compound %in% selected_compound
+    ) %>%
+  ggplot(aes(x=dose, y=value, col=Genes)) +
+    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
+    geom_point() +
+    scale_x_log10(breaks = c(1, 10, 100, 1000, 10000), labels = scales::comma_format()) +
+    labs(
+      x="concentration (nM)",
+      y="Relative intensity",
+      color = "Proteins"
+      ) +
+    facet_wrap(~compound, scales = "free_y") +
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),  
+      axis.line = element_line(),          
+      axis.ticks = element_line()          
+    )
 ```
 
 # Assignment
@@ -163,3 +214,13 @@ Given this dataset, try to do the following:
 - Create a heatmap for the proteins for one or more selected drugs, across the relative concentration range
 Perform hierarchical clustering separately for the clusters you observe, have a look over here: https://www.statology.org/hierarchical-clustering-in-r/
 - use a GO annotation tool to find out if you observe some interesting enrichment in your clusters, and try to link the action of the drug(s) to the observed terms.
+
+## 1. Reproducing dose-response curves
+
+## 2. Create heatmap
+For the heatmap in the paper: The heatmap depicts the combined, preprocessed GO term enrichment results after hierarchically clustering of both rows and columns using Pearson correlation as a distance metric and Weighted Pair Group Method with arithmetic mean as the agglomerative method.
+
+## 3. Gene annotation
+In the paper GO term enrichment analysis was performed for each drug individually using the clusterProfiler R package (v.4.2.2.). Each drug dataset was tested for enrichment of GO terms on all levels (cellular compartment, molecular function and biological process) both in up- and down-regulated proteins with the whole drug dataset as the background. P values were corrected using the FDR approach and the q value cut-off was set to 1. The enrichment results for up-and down-regulation were combined, retaining the more significant entry for duplications. After combining the enrichment results for all drugs, the q values were log transformed, multiplied by −1 for GO terms enriched in down-regulation and z-scored for each GO term individually
+
+A second GO term enrichtment analysis was done(P value cut-off, 0.05; P value correction, FDR approach; Subontology, Molecular Function; whole H. sapiens database as background)
