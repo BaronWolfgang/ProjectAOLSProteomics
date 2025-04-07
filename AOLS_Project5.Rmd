@@ -29,7 +29,7 @@ my_packages_to_install <- c(
 )
 
 BiocManager_packages_to_install <- c(
-  "clusterProfiler" #GO term enrichment analysis
+  "clusterProfiler" #GO term enrichment analysis from paper
 )
 
 packages_to_install <- c(base_packages_to_install, my_packages_to_install)
@@ -216,6 +216,35 @@ Perform hierarchical clustering separately for the clusters you observe, have a 
 - use a GO annotation tool to find out if you observe some interesting enrichment in your clusters, and try to link the action of the drug(s) to the observed terms.
 
 ## 1. Reproducing dose-response curves
+Generalized curve plotting methods:
+```{r}
+selected_genes <- c("BAG3", "DNAJB11", "DNAJB14", "HSPA1A;HSPA1B")
+selected_compound <- c("Geldanamycin")
+
+doseresponse_norm %>%
+  filter(
+    Genes %in% selected_genes,
+    compound %in% selected_compound
+    ) %>%
+  ggplot(aes(x=dose, y=value, col=Genes)) +
+    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
+    geom_point() +
+    scale_x_log10(breaks = c(1, 10, 100, 1000, 10000), labels = scales::comma_format()) +
+    labs(
+      x="concentration (nM)",
+      y="Relative intensity",
+      color = "Proteins"
+      ) +
+    facet_wrap(~compound, scales = "free_y") +
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),  
+      axis.line = element_line(),          
+      axis.ticks = element_line()          
+    )
+```
+
 
 ## 2. Create heatmap
 For the heatmap in the paper: The heatmap depicts the combined, preprocessed GO term enrichment results after hierarchically clustering of both rows and columns using Pearson correlation as a distance metric and Weighted Pair Group Method with arithmetic mean as the agglomerative method.
