@@ -1,0 +1,99 @@
+# Decrypting the molecular basis of cellular drug phenotypes by dose-resolved expression proteomics
+A very interesting article that demonstrates the Omics (with a capital O) character of Proteomics is [Decrypting the molecular basis of cellular drug phenotypes by dose-resolved expression proteomics](https://pmc.ncbi.nlm.nih.gov/articles/PMC11919725/){.uri}, published in Nature Biotechnology in March 2024. Here, the authors measure the protein expression of more than 8000 protein groups after exposing cell lines to 144 different drugs for a period of 18 hours. They use this data to calculate dose response curves for all of the proteins.
+
+Please familiarize yourself with the article, we'll try to reproduce some plots from it.
+
+# Software needed
+## File download software
+For downloading the data you will need an FTP (file transfer protocol) client. For windows, you can obtain Filezilla client (take care not to install extra software that is sometimes offered in the installer). Macintosh users have a built-in FTP client under connect to server, prefix the URL with ftp://.
+
+## R
+Since you are reading this in Rmd, it should be obvious you need R and probably RStudio. The following packages need to be installed: drc for dose response curve calculation tidyverse packages: readr, readxl, tidyr, dplyr, purrr, ggplot2
+
+```{r}
+base_packages_to_install <- c(
+  "readr",
+  "readxl",
+  "tidyr",
+  "dplyr",
+  "purrr",
+  "ggplot2",
+  "drc"
+)
+
+my_packages_to_install <- c(
+  "RCurl"
+)
+
+packages_to_install <- c(base_packages_to_install, my_packages_to_install)
+
+# Check and install packages using a for loop
+for (package in packages_to_install) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    install.packages(package)
+  }
+  library(package, character.only = TRUE)
+}
+```
+
+## Data
+We'd like to re-analyze some data from this article, to try to recreate some dose-response curves. The data is stored in ProteomeXChange, but unfortunately the R package does not support the repository (MassIVE), so we'll need to do some manual work.
+
+In the article, a reference to the dataset is available. Obtain the proteinGroups.txt file from the time dependent dataset.
+
+A 500 Megabytes file with proteinGroups at an FDR of 0.01 can be found in the FTP server of MassIVE in this folder: "/v06/MSV000093659/search/Search results - Long-term performance test Jurkat"
+
+```{r}
+# Define folder name
+data_dir <- "data"
+
+# Create folder if it doesn't exist
+if (!dir.exists(data_dir)) {
+  dir.create(data_dir)
+  cat("Created 'data' folder\n")
+} else {
+  cat("'data' folder already exists\n")
+}
+```
+
+```{r}
+txt_file <- paste0(data_dir,"/proteinGroups_fdr0.01.txt")
+
+if (!file.exists(txt_file)) {
+  # If the file does not exist, download it
+  ftp_url_txt <- URLencode("ftp://massive-ftp.ucsd.edu/v06/MSV000093659/search/Search results - Long-term performance test Jurkat/Picked FDR PG/proteinGroups_fdr0.01.txt")
+  download.file(ftp_url_txt, destfile = txt_file, mode = "wb")
+  cat("Downloaded proteinGroups_fdr0.01.txt to 'data/' folder\n")
+} else {
+  cat("File already exists in 'data/' folder, skipping download.\n")
+}
+```
+
+Read the file into R. Rename the headers of the Gene names table to be more easily used in the rest of the script.
+```{r}
+doseresponse_raw <- read_delim(txt_file) 
+doseresponse <- doseresponse_raw %>%
+  rename(Genes = `Gene names`)
+head(doseresponse)
+```
+
+The drug names are given as numbers, so we will need to obtain the names from the metadata data found in the MassIVE repository.
+```{r}
+xlsx_file <- file.path(data_dir, "MassIVE_MappingSheet.xlsx")
+
+if (!file.exists(xlsx_file)) {
+  ftp_url_xlsx <- URLencode(
+    "ftp://massive-ftp.ucsd.edu/v06/MSV000093659/metadata/MassIVE_MappingSheet.xlsx"
+  )
+  download.file(ftp_url_xlsx, destfile = xlsx_file, mode = "wb")
+  cat("Downloaded MassIVE_MappingSheet.xlsx to 'data/' folder\n")
+} else {
+  cat("File 'MassIVE_MappingSheet.xlsx' already exists, skipping download.\n")
+}
+```
+
+```{r}
+drugs_raw <- read_xlsx(xlsx_file, sheet=2, skip=1, col_names = c("Drug", "Number")) 
+drugs <- drugs_raw %>% pull(Drug)
+```
+
