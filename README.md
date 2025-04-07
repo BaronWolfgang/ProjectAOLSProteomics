@@ -15,6 +15,7 @@ This repository contains the code and data setup for **Project AOLS Proteomics**
 ```bash
 git clone https://github.com/BaronWolfgang/ProjectAOLSProteomics.git
 cd ProjectAOLSProteomics
+```
 
 ### 2. Open the R Markdown file
 Open AOLS_Project5.Rmd in RStudio or your preferred R environment. Ensure that your working directory is the directory of the .Rmd file

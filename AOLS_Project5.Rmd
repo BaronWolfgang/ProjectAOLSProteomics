@@ -22,7 +22,9 @@ base_packages_to_install <- c(
 )
 
 my_packages_to_install <- c(
-  "RCurl"
+  "conflicted",
+  "RCurl",
+  "magrittr"
 )
 
 packages_to_install <- c(base_packages_to_install, my_packages_to_install)
@@ -34,6 +36,9 @@ for (package in packages_to_install) {
   }
   library(package, character.only = TRUE)
 }
+
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
 ```
 
 ## Data
@@ -71,8 +76,7 @@ if (!file.exists(txt_file)) {
 
 Read the file into R. Rename the headers of the Gene names table to be more easily used in the rest of the script.
 ```{r}
-doseresponse_raw <- read_delim(txt_file) 
-doseresponse <- doseresponse_raw %>%
+doseresponse <- read_delim(txt_file) %>%
   rename(Genes = `Gene names`)
 head(doseresponse)
 ```
@@ -90,10 +94,72 @@ if (!file.exists(xlsx_file)) {
 } else {
   cat("File 'MassIVE_MappingSheet.xlsx' already exists, skipping download.\n")
 }
+
+drugs <- read_xlsx(xlsx_file, sheet=2, skip=1, col_names = c("Drug", "Number")) %>% 
+  pull(Drug)
 ```
+
+If you have a look at the dimensions of the dataset, it's clear that there are a massive amount of columns. 
 
 ```{r}
-drugs_raw <- read_xlsx(xlsx_file, sheet=2, skip=1, col_names = c("Drug", "Number")) 
-drugs <- drugs_raw %>% pull(Drug)
+dim(doseresponse)
 ```
 
+We don't need all of them, use the tidyverse `select` function to obtain the colums that contain protein names, descriptions, and LFQ values.
+```{r}
+head(doseresponse)
+```
+
+
+```{r}
+dmso <- doseresponse %>%
+  select(Genes, starts_with("LFQ") & contains("DMSO"))
+
+doseresponse <- doseresponse %>%
+  select(c(Genes), starts_with("LFQ")) %>%
+  select(-(contains("DMSO")))
+```
+
+## Tidying and normalization
+Use dplyr to make a long-form dataset with the data points coming from the LFQ columns. We'll need to split the column names into their separate parts, this can be done with the `separate` command.
+
+According to the methods, the protein values are divided by the mean DMSO expression value.
+```{r}
+dmso_tidy <- dmso %>% pivot_longer(-Genes) %>% summarize(.by=Genes, mean_dmso = mean(value, na.rm=TRUE)) %>% select(Genes, mean_dmso)
+
+tidy_doseresponse <- doseresponse %>%
+  pivot_longer(starts_with("LFQ")) %>%
+  separate(name, sep=" ", into=c(NA, NA, "compound", "dose")) %>%
+  mutate(compound = drugs[as.numeric(compound)], dose = as.numeric(dose))
+
+tidy_doseresponse %<>% left_join(dmso_tidy, by="Genes")
+
+doseresponse_norm <- tidy_doseresponse %>%
+  mutate(.by=c(Genes, compound), value = value / mean_dmso) %>%
+  select(-mean_dmso)
+```
+
+We also need to add a zero-concentration value for the curves, so we have a common starting point.
+```{r}
+zero_values <- doseresponse_norm %>% summarize(.by = c(Genes, compound), dose=0.1, value=1)
+
+doseresponse_norm %<>% bind_rows(zero_values)
+```
+
+### Example plot
+Here is an example plot reproduction of the article.
+```{r}
+doseresponse_norm %>%
+  filter(Genes %in% c("BAG3", "DNAJB1", "DNAJB4", "HSPA1A;HSPA1B"), compound=="Geldanamycin") %>%
+  ggplot(aes(x=dose, y=value, col=Genes)) +
+    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
+    geom_point() +
+    scale_x_log10()
+```
+
+# Assignment
+Given this dataset, try to do the following:
+- Reproduce some of the dose-response curves, or try to find some that have proteins that have relatively high or low values in the higher drug concentration regimes
+- Create a heatmap for the proteins for one or more selected drugs, across the relative concentration range
+Perform hierarchical clustering separately for the clusters you observe, have a look over here: https://www.statology.org/hierarchical-clustering-in-r/
+- use a GO annotation tool to find out if you observe some interesting enrichment in your clusters, and try to link the action of the drug(s) to the observed terms.
