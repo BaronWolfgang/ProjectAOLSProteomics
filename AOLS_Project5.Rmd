@@ -425,7 +425,8 @@ Comparison data
 ```{r}
 comparison_data <- doseresponse_norm %>%
   filter(dose %in% c(1e-1, 10000), # we want to compare highest vs lowest (baseline) conditions
-         !is.na(value) #there are 3,060 na's
+         !is.na(value), #there are 3,060 na's
+         is.finite(value) 
          ) %>%
   group_by(Genes, compound) %>%
   mutate(n = n()) %>%
