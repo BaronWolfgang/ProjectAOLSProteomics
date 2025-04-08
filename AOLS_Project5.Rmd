@@ -25,7 +25,8 @@ my_packages_to_install <- c(
   "conflicted",
   "RCurl",
   "magrittr",
-  "stringr"
+  "stringr",
+  "broom"
 )
 
 BiocManager_packages_to_install <- c(
@@ -192,7 +193,7 @@ doseresponse_norm %>%
   ggplot(aes(x=dose, y=value, col=Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
-    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+    scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
                   labels = scales::comma_format(),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
@@ -233,7 +234,7 @@ doseresponse_norm %>%
   ggplot(aes(x=dose, y=value, col=Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
-    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+    scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
                   labels = scales::comma_format(),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
@@ -274,7 +275,7 @@ doseresponse_norm %>%
   ggplot(aes(x=dose, y=value, col=Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
-    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+    scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
                   labels = scales::comma_format(),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
@@ -294,7 +295,6 @@ doseresponse_norm %>%
     )
 ```
 
-
 ### Manual checking
 ```{r}
 doseresponse_norm %>% select(Genes) %>% unique() %>% 
@@ -308,7 +308,7 @@ doseresponse_norm %>% select(compound) %>% unique() %>%
 
 ```{r}
 #Selected genes and compounds from Fig.3a
-selected_genes <- c("HDAC1", "RRM1", "BAG3", "DNMT1", "DHFR")
+selected_genes <- c("HDAC1", "RRM2", "BAG3", "DNMT1", "DHFR")
 selected_compounds <- c("Vorinostat", "Palbociclib", "Carfilzomib", "Decitabine", "Methotrexate")
 selected_palette <- palette.colors(length(unique(selected_genes))+1)[-1]  #Okabe-Ito minus black
 
@@ -320,7 +320,7 @@ doseresponse_norm %>%
   ggplot(aes(x=dose, y=value, col=Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
-    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+    scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
                   labels = scales::comma_format(),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
@@ -353,7 +353,7 @@ doseresponse_norm %>%
   ggplot(aes(x=dose, y=value, col = Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
-    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+    scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
                   labels = scales::comma_format(),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
@@ -379,7 +379,7 @@ doseresponse_norm %>%
 ```{r}
 #Selected genes and compounds from Fig.3b
 selected_genes <- doseresponse_norm %>% select(Genes) %>% unique() %>% 
-  filter(str_detect(Genes, "CLK")) %>% #No CLK3 or CLK4 in the file?? 
+  filter(str_detect(Genes, "CLK")) %>% 
   arrange(Genes) %>% pull()
 selected_compounds <- c("Brigatinib")
 selected_palette <- palette.colors(length(unique(selected_genes))+1)[-1]  #Okabe-Ito minus black
@@ -392,7 +392,7 @@ doseresponse_norm %>%
   ggplot(aes(x=dose, y=value, col=Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
-    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+    scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
                   labels = scales::comma_format(),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
@@ -416,14 +416,25 @@ doseresponse_norm %>%
 ## 2. Create heatmap
 For the heatmap in the paper: The heatmap depicts the combined, preprocessed GO term enrichment results after hierarchically clustering of both rows and columns using Pearson correlation as a distance metric and Weighted Pair Group Method with arithmetic mean as the agglomerative method.
 
+```{r}
+doseresponse_norm %>% filter(dose == 1e-01) 
+```
+
+
 Comparison data
 ```{r}
 comparison_data <- doseresponse_norm %>%
-  filter(dose %in% c(1, 10000), # we want to compare highest vs lowest (baseline) conditions
-         filter(is.na(value)) #there are 3,060 na's
-         ) 
+  filter(dose %in% c(1e-1, 10000), # we want to compare highest vs lowest (baseline) conditions
+         !is.na(value) #there are 3,060 na's
+         ) %>%
+  group_by(Genes, compound) %>%
+  mutate(n = n()) %>%
+  filter(n == 2) %>%
+  select(-n) %>%
+  arrange(compound, Genes)
 
 comparison_data
+  
 ```
 
 Run linear model
