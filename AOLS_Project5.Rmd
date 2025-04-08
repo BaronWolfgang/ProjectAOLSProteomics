@@ -432,7 +432,8 @@ comparison_data <- doseresponse_norm %>%
   mutate(n = n()) %>%
   filter(n == 2) %>%
   select(-n) %>%
-  arrange(compound, Genes)
+  arrange(compound, Genes, dose) %>%
+  ungroup()
 
 comparison_data
   
@@ -444,12 +445,17 @@ lm_results <- comparison_data %>%
   group_by(Genes, compound) %>%
   nest() %>%
   mutate(
-    model = map(data, ~ lm(value ~ dose, data = .x)),
-    results = map(model, tidy)
+    model = map(data, ~ lm(value ~ dose, data = .x)),   # Linear model with `dose`
+    results = map(model, tidy)                          # Extract model results
   ) %>%
-  unnest(results)
+  unnest(results)  
 
 lm_results
+```
+
+
+```{r}
+saveRDS(lm_results)
 ```
 
 
