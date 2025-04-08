@@ -182,17 +182,20 @@ doseresponse_norm %>% select(Genes) %>% unique() %>% filter(str_detect(Genes, "D
 ```
 ```{r, adjusted}
 selected_genes <- c("BAG3", "DNAJB11", "DNAJB14", "HSPA1A;HSPA1B")
-selected_compound <- c("Geldanamycin")
+selected_compounds <- c("Geldanamycin")
 
 doseresponse_norm %>%
   filter(
     Genes %in% selected_genes,
-    compound %in% selected_compound
+    compound %in% selected_compounds
     ) %>%
   ggplot(aes(x=dose, y=value, col=Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
-    scale_x_log10(breaks = c(1, 10, 100, 1000, 10000), labels = scales::comma_format()) +
+    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+                  labels = scales::comma_format(),
+                  expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0,0)) +
     labs(
       x="concentration (nM)",
       y="Relative intensity",
@@ -219,17 +222,22 @@ Perform hierarchical clustering separately for the clusters you observe, have a 
 Generalized curve plotting methods:
 ```{r}
 selected_genes <- c("BAG3", "DNAJB11", "DNAJB14", "HSPA1A;HSPA1B")
-selected_compound <- c("Geldanamycin")
+selected_compounds <- c("Geldanamycin")
+selected_palette <- palette.colors(length(unique(selected_genes))+1)[-1] #Okabe-Ito minus black
 
 doseresponse_norm %>%
   filter(
     Genes %in% selected_genes,
-    compound %in% selected_compound
+    compound %in% selected_compounds
     ) %>%
   ggplot(aes(x=dose, y=value, col=Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
-    scale_x_log10(breaks = c(1, 10, 100, 1000, 10000), labels = scales::comma_format()) +
+    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+                  labels = scales::comma_format(),
+                  expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_color_manual(values = selected_palette) +
     labs(
       x="concentration (nM)",
       y="Relative intensity",
@@ -243,6 +251,164 @@ doseresponse_norm %>%
       axis.line = element_line(),          
       axis.ticks = element_line()          
     )
+```
+
+### random subset
+```{r}
+length(unique(doseresponse_norm$Genes))
+length(unique(doseresponse_norm$compound))
+```
+
+```{r}
+set.seed(123)
+
+selected_genes <- sample(unique(doseresponse_norm$Genes), 5)
+selected_compounds <- sample(unique(doseresponse_norm$compound), 9)
+selected_palette <- palette.colors(length(unique(selected_genes))+1)[-1] #Okabe-Ito minus black
+
+doseresponse_norm %>%
+  filter(
+    Genes %in% selected_genes,
+    compound %in% selected_compounds
+    ) %>%
+  ggplot(aes(x=dose, y=value, col=Genes)) +
+    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
+    geom_point() +
+    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+                  labels = scales::comma_format(),
+                  expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_color_manual(values = selected_palette) +
+    labs(
+      x="concentration (nM)",
+      y="Relative intensity",
+      color = "Proteins"
+      ) +
+    facet_wrap(~compound, scales = "free_y") +
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),  
+      axis.line = element_line(),          
+      axis.ticks = element_line()          
+    )
+```
+
+
+### Manual checking
+```{r}
+doseresponse_norm %>% select(Genes) %>% unique() %>% 
+  filter(str_detect(Genes, "RRM")) %>% 
+  arrange(Genes)
+
+doseresponse_norm %>% select(compound) %>% unique() %>% 
+  #filter(str_detect(compound, "")) %>% 
+  arrange(compound)
+```
+
+```{r}
+#Selected genes and compounds from Fig.3a
+selected_genes <- c("HDAC1", "RRM1", "BAG3", "DNMT1", "DHFR")
+selected_compounds <- c("Vorinostat", "Palbociclib", "Carfilzomib", "Decitabine", "Methotrexate")
+selected_palette <- palette.colors(length(unique(selected_genes))+1)[-1]  #Okabe-Ito minus black
+
+doseresponse_norm %>%
+  filter(
+    Genes %in% selected_genes,
+    compound %in% selected_compounds
+    ) %>%
+  ggplot(aes(x=dose, y=value, col=Genes)) +
+    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
+    geom_point() +
+    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+                  labels = scales::comma_format(),
+                  expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_color_manual(values = selected_palette) +
+    labs(
+      x="concentration (nM)",
+      y="Relative intensity",
+      color = "Proteins"
+      ) +
+    facet_wrap(~compound, scales = "free_y") +
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),  
+      axis.line = element_line(),          
+      axis.ticks = element_line()          
+    )
+
+figure_3a_map <- data.frame(
+  compound = selected_compounds,
+  Genes = selected_genes
+)
+
+doseresponse_norm %>%
+  filter(
+    Genes %in% selected_genes,
+    compound %in% selected_compounds
+    ) %>%
+  semi_join(figure_3a_map, by = c("compound", "Genes")) %>%
+  ggplot(aes(x=dose, y=value, col=Genes)) +
+    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
+    geom_point() +
+    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+                  labels = scales::comma_format(),
+                  expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_color_manual(values = selected_palette) +
+    labs(
+      x="concentration (nM)",
+      y="Relative intensity",
+      color = "Proteins"
+      ) +
+    facet_wrap(compound~Genes, scales = "free_y") +
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),  
+      axis.line = element_line(),          
+      axis.ticks = element_line()          
+    )
+
+
+```
+
+```{r}
+#Selected genes and compounds from Fig.3b
+selected_genes <- doseresponse_norm %>% select(Genes) %>% unique() %>% 
+  filter(str_detect(Genes, "CLK")) %>% #No CLK3 or CLK4 in the file?? 
+  arrange(Genes) %>% pull()
+selected_compounds <- c("Brigatinib")
+selected_palette <- palette.colors(length(unique(selected_genes))+1)[-1]  #Okabe-Ito minus black
+
+doseresponse_norm %>%
+  filter(
+    Genes %in% selected_genes,
+    compound %in% selected_compounds
+    ) %>%
+  ggplot(aes(x=dose, y=value, col=Genes)) +
+    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
+    geom_point() +
+    scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
+                  labels = scales::comma_format(),
+                  expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_color_manual(values = selected_palette) +
+    labs(
+      x="concentration (nM)",
+      y="Relative intensity",
+      color = "Proteins"
+      ) +
+    facet_wrap(~compound, scales = "free_y") +
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),  
+      axis.line = element_line(),          
+      axis.ticks = element_line()          
+    ) 
 ```
 
 
