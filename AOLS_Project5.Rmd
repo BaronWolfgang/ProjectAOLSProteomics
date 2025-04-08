@@ -350,14 +350,14 @@ doseresponse_norm %>%
     compound %in% selected_compounds
     ) %>%
   semi_join(figure_3a_map, by = c("compound", "Genes")) %>%
-  ggplot(aes(x=dose, y=value, col=Genes)) +
+  ggplot(aes(x=dose, y=value, col = Genes)) +
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
     scale_x_log10(breaks = c(0,1, 10, 100, 1000, 10000), 
                   labels = scales::comma_format(),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
-    scale_color_manual(values = selected_palette) +
+    scale_color_manual(values = rep(palette.colors()[6], length(selected_genes))) +
     labs(
       x="concentration (nM)",
       y="Relative intensity",
@@ -369,7 +369,8 @@ doseresponse_norm %>%
       panel.grid.major = element_blank(), 
       panel.grid.minor = element_blank(),  
       axis.line = element_line(),          
-      axis.ticks = element_line()          
+      axis.ticks = element_line(),
+      legend.position = "none"
     )
 
 
@@ -414,6 +415,31 @@ doseresponse_norm %>%
 
 ## 2. Create heatmap
 For the heatmap in the paper: The heatmap depicts the combined, preprocessed GO term enrichment results after hierarchically clustering of both rows and columns using Pearson correlation as a distance metric and Weighted Pair Group Method with arithmetic mean as the agglomerative method.
+
+Comparison data
+```{r}
+comparison_data <- doseresponse_norm %>%
+  filter(dose %in% c(1, 10000), # we want to compare highest vs lowest (baseline) conditions
+         filter(is.na(value)) #there are 3,060 na's
+         ) 
+
+comparison_data
+```
+
+Run linear model
+```{r}
+lm_results <- comparison_data %>%
+  group_by(Genes, compound) %>%
+  nest() %>%
+  mutate(
+    model = map(data, ~ lm(value ~ dose, data = .x)),
+    results = map(model, tidy)
+  ) %>%
+  unnest(results)
+
+lm_results
+```
+
 
 ## 3. Gene annotation
 In the paper GO term enrichment analysis was performed for each drug individually using the clusterProfiler R package (v.4.2.2.). Each drug dataset was tested for enrichment of GO terms on all levels (cellular compartment, molecular function and biological process) both in up- and down-regulated proteins with the whole drug dataset as the background. P values were corrected using the FDR approach and the q value cut-off was set to 1. The enrichment results for up-and down-regulation were combined, retaining the more significant entry for duplications. After combining the enrichment results for all drugs, the q values were log transformed, multiplied by −1 for GO terms enriched in down-regulation and z-scored for each GO term individually
