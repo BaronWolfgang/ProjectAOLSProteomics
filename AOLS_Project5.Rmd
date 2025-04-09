@@ -26,7 +26,10 @@ my_packages_to_install <- c(
   "RCurl",
   "magrittr",
   "stringr",
-  "broom"
+  "broom",
+  "tibble",
+  "pheatmap",
+  "fuzzyjoin"
 )
 
 BiocManager_packages_to_install <- c(
@@ -141,18 +144,31 @@ Use dplyr to make a long-form dataset with the data points coming from the LFQ c
 
 According to the methods, the protein values are divided by the mean DMSO expression value.
 ```{r}
-dmso_tidy <- dmso %>% pivot_longer(-Genes) %>% summarize(.by=Genes, mean_dmso = mean(value, na.rm=TRUE)) %>% select(Genes, mean_dmso)
+# Check if the RDS file exists
+if (file.exists("doseresponse_norm.rds")) {
+  # Load the doseresponse_norm dataset from the RDS file if it exists
+  doseresponse_norm <- readRDS("doseresponse_norm.rds")
+} else {
+  # If the RDS file does not exist, run the code to create the dataset
+  dmso_tidy <- dmso %>% 
+    pivot_longer(-Genes) %>% 
+    summarize(.by=Genes, mean_dmso = mean(value, na.rm=TRUE)) %>% 
+    select(Genes, mean_dmso)
 
-tidy_doseresponse <- doseresponse %>%
-  pivot_longer(starts_with("LFQ")) %>%
-  separate(name, sep=" ", into=c(NA, NA, "compound", "dose")) %>%
-  mutate(compound = drugs[as.numeric(compound)], dose = as.numeric(dose))
+  tidy_doseresponse <- doseresponse %>%
+    pivot_longer(starts_with("LFQ")) %>%
+    separate(name, sep=" ", into=c(NA, NA, "compound", "dose")) %>%
+    mutate(compound = drugs[as.numeric(compound)], dose = as.numeric(dose))
 
-tidy_doseresponse %<>% left_join(dmso_tidy, by="Genes")
+  tidy_doseresponse %<>% left_join(dmso_tidy, by="Genes")
 
-doseresponse_norm <- tidy_doseresponse %>%
-  mutate(.by=c(Genes, compound), value = value / mean_dmso) %>%
-  select(-mean_dmso)
+  doseresponse_norm <- tidy_doseresponse %>%
+    mutate(.by=c(Genes, compound), value = value / mean_dmso) %>%
+    select(-mean_dmso)
+
+  # Save the doseresponse_norm dataset as an RDS file for future use
+  saveRDS(doseresponse_norm, "doseresponse_norm.rds")
+}
 ```
 
 We also need to add a zero-concentration value for the curves, so we have a common starting point.
@@ -235,7 +251,7 @@ doseresponse_norm %>%
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
     scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
-                  labels = scales::comma_format(),
+                  labels = scales::trans_format("log10", scales::math_format(10^.x)),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
     scale_color_manual(values = selected_palette) +
@@ -276,7 +292,7 @@ doseresponse_norm %>%
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
     scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
-                  labels = scales::comma_format(),
+                  labels = scales::trans_format("log10", scales::math_format(10^.x)),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
     scale_color_manual(values = selected_palette) +
@@ -321,7 +337,7 @@ doseresponse_norm %>%
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
     scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
-                  labels = scales::comma_format(),
+                  labels = scales::trans_format("log10", scales::math_format(10^.x)),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
     scale_color_manual(values = selected_palette) +
@@ -354,7 +370,7 @@ doseresponse_norm %>%
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
     scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
-                  labels = scales::comma_format(),
+                  labels = scales::trans_format("log10", scales::math_format(10^.x)),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
     scale_color_manual(values = rep(palette.colors()[6], length(selected_genes))) +
@@ -393,7 +409,7 @@ doseresponse_norm %>%
     geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
     geom_point() +
     scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
-                  labels = scales::comma_format(),
+                  labels = scales::trans_format("log10", scales::math_format(10^.x)),
                   expand = c(0, 0)) +
     scale_y_continuous(expand = c(0,0)) +
     scale_color_manual(values = selected_palette) +
@@ -416,11 +432,241 @@ doseresponse_norm %>%
 ## 2. Create heatmap
 For the heatmap in the paper: The heatmap depicts the combined, preprocessed GO term enrichment results after hierarchically clustering of both rows and columns using Pearson correlation as a distance metric and Weighted Pair Group Method with arithmetic mean as the agglomerative method.
 
+### most differential compounds
+#### Genecount
 ```{r}
-doseresponse_norm %>% filter(dose == 1e-01) 
+comparison_data_summary <- comparison_data_wide %>% 
+  group_by(compound) %>%
+  summarize(
+    upregulated = sum(regulation == "upregulated"),
+    downregulated = sum(regulation == "downregulated"),
+    not_regulated = sum(regulation == "not_regulated")
+  ) %>%
+  mutate(total_genes = upregulated + downregulated + not_regulated) %>%
+  ungroup() %>%
+  arrange(not_regulated)
+
+comparison_data_summary
+
+compound_ranked_regulated <- comparison_data_summary %>% pull(compound) 
+
+```
+
+```{r,fig.width=14} 
+comparison_data_summary %>%
+  mutate(
+    compound = factor(compound, levels=compound_ranked_regulated),
+    label_y = ifelse(
+      upregulated < downregulated,
+      upregulated + 10,            
+      -downregulated - 10      
+    ),
+    label_hjust = ifelse(
+      upregulated < downregulated,
+      0, 1
+    )
+  ) %>%
+  ggplot(aes(x = compound)) +
+  geom_bar(aes(y = upregulated, fill = "Upregulated"), stat = "identity") +
+  geom_bar(aes(y = -downregulated, fill = "Downregulated"), stat = "identity") +
+  scale_y_continuous(
+    limits = c(-9000,5000),
+    expand = c(0,0),
+    breaks =seq(-9000, 5000, by = 1000)
+  ) +
+  scale_fill_manual(values = c("Downregulated" = "#56B4E9", "Upregulated" = "#CC79A7")) +
+  geom_text(
+    aes(y = label_y, label = compound, hjust = label_hjust),
+    angle = 90, vjust = 0.35, size = 3
+    ) +
+  theme_bw() +
+  labs(y="Number of genes",
+       x="") +
+  theme(
+    #axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),  
+    axis.line = element_line(),          
+    axis.ticks = element_line(),
+    
+    legend.text = element_text(size = 20),
+    legend.title = element_blank(),
+    legend.position = c(0.99,0.01),
+    legend.justification = c("right", "bottom"),
+    legend.background = element_blank()
+  ) +
+  guides(fill = guide_legend(reverse = TRUE))
+```
+
+#### compound Mechanism of Action
+taken from: https://www.proteomicsdb.org/search?q=&type=Drug&projectId=4489
+```{r}
+MechanismofAction <- read.csv("data/drug_search_.csv")
+MechanismofAction
+```
+
+```{r}
+compound_ranked_regulated
+```
+
+```{r}
+compounds_with_MoA <- stringdist_full_join(
+  data.frame(compound = unique(compound_ranked_regulated)),
+  MechanismofAction, 
+  by=c("compound" = "Name"),
+  method = "jw",
+  max_dist=0.08,
+  distance_col = "dist") %>%
+  select(compound, Type)
+
+compounds_with_MoA 
+
+compounds_with_MoA %>% pull() %>% table() 
+
+compounds_with_MoA_simp <- compounds_with_MoA %>% 
+  mutate(compound_simp = case_when(
+    compound == "Small molecule" ~ "Other",
+    compound == "Hormone-like" ~ "Other",
+    compound == "Cytp450" ~ "Other",
+    compound == "Calcineurin inhibitor" ~ "Other",
+    TRUE ~ compound
+  ))
+
+length(compounds_with_MoA_simp %>% unique())
+
+paper_compound_types <- c()
+```
+
+```{r, fig.width=14}
+comparison_data_summary %>% 
+  left_join(compounds_with_MoA) %>%
+  mutate(
+    compound = factor(compound, levels=compound_ranked_regulated),
+    label_y = ifelse(
+      upregulated < downregulated,
+      upregulated + 10,            
+      -downregulated - 10      
+    ),
+    label_hjust = ifelse(
+      upregulated < downregulated,
+      0, 1
+    )
+  ) %>%
+  ggplot(aes(x = compound)) +
+  geom_bar(aes(y = upregulated, fill = "Upregulated"), stat = "identity") +
+  geom_bar(aes(y = -downregulated, fill = "Downregulated"), stat = "identity") +
+  scale_y_continuous(
+    limits = c(-9000,5000),
+    expand = c(0,0),
+    breaks =seq(-9000, 5000, by = 1000)
+  ) +
+  scale_fill_manual(values = c("Downregulated" = "#56B4E9", "Upregulated" = "#CC79A7")) +
+  geom_text(
+    aes(y = label_y, label = compound, hjust = label_hjust),
+    angle = 90, vjust = 0.35, size = 3
+    ) +
+  theme_bw() +
+  labs(y="Number of genes",
+       x="") +
+  
+  geom_point(aes(y=-8900, col=Type), size=2 ) +
+  
+  theme(
+    #axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),  
+    axis.line = element_line(),          
+    axis.ticks = element_line(),
+    
+    legend.text = element_text(size = 20),
+    legend.title = element_blank(),
+    #legend.position = c(0.99,0.01),
+    legend.justification = c("right", "bottom"),
+    legend.background = element_blank()
+  ) +
+  guides(fill = guide_legend(reverse = TRUE)) 
 ```
 
 
+### per compound heatmapping
+```{r}
+doseresponse_norm %>%
+  filter(!is.na(value), 
+         is.finite(value)) %>%
+  distinct(Genes, compound, dose, .keep_all = TRUE) %>%
+  mutate(log2FC = log2(value / value[dose == 0.1]))
+```
+
+
+```{r}
+doseresponse_log2FC <- doseresponse_norm %>%
+  filter(!is.na(value), 
+         is.finite(value)) %>%
+  distinct(Genes, compound, dose, .keep_all = TRUE) %>%
+  mutate(
+    log2FC = log2(value / value[dose == 0.1]),
+    compound = factor(compound, levels=compound_ranked_regulated)
+    ) %>%
+  arrange(compound) %>%
+  filter(dose != 0.1)
+
+doseresponse_log2FC
+```
+
+```{r}
+n_compounds <- 3
+selected_compounds <- compound_ranked_regulated[1:n_compounds]
+
+heatmap_data <- doseresponse_log2FC %>%
+  filter(!is.na(Genes), compound %in% selected_compounds) %>% 
+  mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
+  select(Genes, compound_dose, log2FC) %>%
+  pivot_wider(names_from = compound_dose, values_from = log2FC) 
+
+heatmap_data
+
+heatmap_data_matrix <- heatmap_data %>%
+  column_to_rownames("Genes") %>%
+  mutate(
+    across(
+      everything(),  
+      ~ replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE))
+      )
+    ) %>%
+  as.matrix()
+
+conc_colnames <- heatmap_data %>%
+  select(-Genes) %>%
+  colnames() %>%
+  unique()
+
+compound_group <- data.frame(
+  compound = rep(selected_compounds, each = 5)
+)
+rownames(compound_group) <- colnames(heatmap_data_matrix)
+
+# Plot
+pheatmap(
+  heatmap_data_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = "Hierarchical Clustering of log2FC for Selected Compounds",
+  na_col = "grey80",
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  annotation_col = compound_group, 
+  annotation_names_col = FALSE,
+)
+```
+
+### highest vs baseline heatmap
 Comparison data
 ```{r}
 comparison_data <- doseresponse_norm %>%
@@ -429,17 +675,56 @@ comparison_data <- doseresponse_norm %>%
          is.finite(value) 
          ) %>%
   group_by(Genes, compound) %>%
-  mutate(n = n()) %>%
+  mutate(n = n(),
+         compound = factor(compound, levels=compound_ranked_regulated)) %>%
   filter(n == 2) %>%
-  select(-n) %>%
+  select(compound, Genes, dose, value) %>%
   arrange(compound, Genes, dose) %>%
   ungroup()
 
 comparison_data
-  
 ```
 
-Run linear model
+```{r}
+comparison_data_wide <- comparison_data %>%
+  pivot_wider(names_from = dose, values_from = value, names_prefix = "dose_") %>%
+  mutate(
+    log2FC = log2(dose_10000 / dose_0.1),
+    regulation = case_when(
+      log2FC > log2(1.5) ~ "upregulated",
+      log2FC < log2(0.7) ~ "downregulated", 
+      TRUE ~ "not_regulated"
+    )
+  ) 
+
+comparison_data_wide
+```
+
+```{r, fig.width=14}
+heatmap_matrix <- comparison_data_wide %>%
+  mutate(across(everything(), ~replace(., is.infinite(.), NA))) %>%  # Replace -Inf and Inf with NA
+  select(Genes, compound, log2FC) %>%  # Keep only the Genes, compound, and log2FC columns
+  pivot_wider(names_from = Genes, values_from = log2FC) %>%  # Pivot to wide format: Genes as columns, log2FC as values
+  column_to_rownames("compound") %>%  # Set compound as row names
+  as.matrix() 
+
+heatmap_matrix[is.na(heatmap_matrix)] <- 0
+
+# Create clustered heatmap
+pheatmap(
+  heatmap_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = "Hierarchical Clustering of log2FC (10,000 nm vs 0,1 nm)",
+  na_col = "grey80",
+  show_rownames = F,  # Remove row labels
+  show_colnames = F   # Remove column labels
+)
+```
+
+
+### Linear model
 ```{r}
 lm_results <- comparison_data %>%
   group_by(Genes, compound) %>%
@@ -458,6 +743,12 @@ lm_results
 saveRDS(lm_results)
 ```
 
+```{r}
+lm_results_adj <- lm_results %>%
+  mutate(
+    p_adj = p.adjust(p_value, method = "BH")
+  )
+```
 
 ## 3. Gene annotation
 In the paper GO term enrichment analysis was performed for each drug individually using the clusterProfiler R package (v.4.2.2.). Each drug dataset was tested for enrichment of GO terms on all levels (cellular compartment, molecular function and biological process) both in up- and down-regulated proteins with the whole drug dataset as the background. P values were corrected using the FDR approach and the q value cut-off was set to 1. The enrichment results for up-and down-regulation were combined, retaining the more significant entry for duplications. After combining the enrichment results for all drugs, the q values were log transformed, multiplied by −1 for GO terms enriched in down-regulation and z-scored for each GO term individually
@@ -468,3 +759,5 @@ Either clusterProfiler or topGO for GO term enrichtment.
 
 ## Other things we could look at
 For the volcano plot displayed in Extended Data Fig. 2b assessing the quantitative reproducibility, the 48 DMSO controls were randomly assigned into two equally sized groups. After median centering normalization of the LFQ intensities of the picked FDR gene group output and filtering for completeness in the dataset, a two-sided Student’s t-test was performed for all 4,694 proteins. P values were corrected for multiple hypothesis testing using the FDR approach using the R package fdrtool (v.1.2.17).
+
+
