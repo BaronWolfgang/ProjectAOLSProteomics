@@ -178,6 +178,14 @@ zero_values <- doseresponse_norm %>% summarize(.by = c(Genes, compound), dose=0.
 doseresponse_norm %<>% bind_rows(zero_values)
 ```
 
+Remove the raw data from the environment
+```{r}
+remove(dmso)
+remove(doseresponse)
+remove(zero_values)
+```
+
+
 ### Example plot
 Here is an example plot reproduction of the article.
 ```{r, example}
@@ -436,14 +444,10 @@ For the heatmap in the paper: The heatmap depicts the combined, preprocessed GO 
 #### Comparison data
 ```{r}
 comparison_data <- doseresponse_norm %>%
-  filter(dose %in% c(1e-1, 10000), # we want to compare highest vs lowest (baseline) conditions
-         !is.na(value), #there are 3,060 na's
+  filter(!is.na(value), #there are 3,060 na's
          is.finite(value) 
          ) %>%
-  group_by(Genes, compound) %>%
-  mutate(n = n(),
-         compound = factor(compound, levels=compound_ranked_regulated)) %>%
-  filter(n == 2) %>%
+  distinct(compound, Genes, dose, .keep_all = TRUE) %>%
   select(compound, Genes, dose, value) %>%
   arrange(compound, Genes, dose) %>%
   ungroup()
@@ -455,10 +459,12 @@ comparison_data
 comparison_data_wide <- comparison_data %>%
   pivot_wider(names_from = dose, values_from = value, names_prefix = "dose_") %>%
   mutate(
-    log2FC = log2(dose_10000 / dose_0.1),
+    across(starts_with("dose_"), 
+           ~ log2(. / dose_0.1), 
+           .names = "log2FC_{str_remove(.col, 'dose_')}"),
     regulation = case_when(
-      log2FC > log2(1.5) ~ "upregulated",
-      log2FC < log2(0.7) ~ "downregulated", 
+      log2FC_10000 > log2(1.5) ~ "upregulated",
+      log2FC_10000 < log2(0.7) ~ "downregulated", 
       TRUE ~ "not_regulated"
     )
   ) 
@@ -478,18 +484,24 @@ comparison_data_summary <- comparison_data_wide %>%
   ) %>%
   mutate(total_genes = upregulated + downregulated + not_regulated) %>%
   ungroup() %>%
-  arrange(not_regulated)
+  arrange(not_regulated) 
 
 comparison_data_summary
 
 compound_ranked_regulated <- comparison_data_summary %>% pull(compound) 
+
+#Fix compound ordering
+comparison_data <- comparison_data %>% 
+  mutate(compound = factor(compound, levels=compound_ranked_regulated))
+
+comparison_data_summary <- comparison_data_summary %>%
+  mutate(compound = factor(compound, levels=compound_ranked_regulated))
 
 ```
 
 ```{r,fig.width=14} 
 comparison_data_summary %>%
   mutate(
-    compound = factor(compound, levels=compound_ranked_regulated),
     label_y = ifelse(
       upregulated < downregulated,
       upregulated + 10,            
@@ -554,29 +566,27 @@ compounds_with_MoA <- stringdist_full_join(
   method = "jw",
   max_dist=0.08,
   distance_col = "dist") %>%
-  select(compound, Type)
-
-compounds_with_MoA 
-
-compounds_with_MoA %>% pull() %>% table() 
-
-compounds_with_MoA_simp <- compounds_with_MoA %>% 
+  select(compound, Type) %>%
   mutate(Type_simp = case_when(
     Type == "Small molecule" ~ "Other",
     Type == "Hormone-like" ~ "Other",
     Type == "CytP450 inhibitor " ~ "Other",
     Type == "Calcineurin inhibitor" ~ "Other",
     Type == "HDMi" ~ "Other",        
-    Type == "MTi" ~ "Other",    
+    Type == "MTi" ~ "Methyltr. inhibitor",    
     Type == "NFAT activation inhibitor" ~ "Other",    
     TRUE ~ Type
-  ))
+    ),
+    Type_simp = str_replace(Type_simp, "inhibitor", "inh."),
+    compound = factor(compound, levels=compound_ranked_regulated)
+  )
 
-compounds_with_MoA_simp %>% pull(Type_simp) %>% table()
+compounds_with_MoA
 
-paper_compound_types <- c()
 ```
 
+
+#### with compound annotation
 ```{r, fig.width=14}
 comparison_data_summary %>% 
   left_join(compounds_with_MoA) %>%
@@ -609,7 +619,7 @@ comparison_data_summary %>%
   labs(y="Number of genes",
        x="") +
   
-  geom_point(aes(y=-8900, col=Type), size=2 ) +
+  geom_point(aes(y=-8900, col=Type_simp), size=2 ) +
   
   theme(
     #axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
@@ -623,41 +633,98 @@ comparison_data_summary %>%
     
     legend.text = element_text(size = 20),
     legend.title = element_blank(),
-    #legend.position = c(0.99,0.01),
+    legend.position = c(0.99,0.05),
     legend.justification = c("right", "bottom"),
-    legend.background = element_blank()
+    legend.background = element_rect(color = "black", fill = "white")
   ) +
-  guides(fill = guide_legend(reverse = TRUE)) 
+  guides(
+    fill = guide_legend(reverse = TRUE),
+    col = guide_legend(ncol = 4)  # Split color legend into 2 columns
+  )
+```
+
+#### FIXME
+adjust using Fernando's code
+```{r, fig.width=14}
+comparison_data_summary %>% 
+  left_join(compounds_with_MoA) %>%
+  mutate(
+    compound = factor(compound, levels=compound_ranked_regulated),
+    label_y = ifelse(
+      upregulated < downregulated,
+      upregulated + 10,            
+      -downregulated - 10      
+    ),
+    label_hjust = ifelse(
+      upregulated < downregulated,
+      0, 1
+    )
+  ) %>%
+  ggplot(aes(x = compound)) +
+  geom_bar(aes(y = upregulated, fill = "Upregulated"), stat = "identity") +
+  geom_bar(aes(y = -downregulated, fill = "Downregulated"), stat = "identity") +
+  scale_y_continuous(
+    limits = c(-9000,5000),
+    expand = c(0,0),
+    breaks =seq(-9000, 5000, by = 1000)
+  ) +
+  scale_fill_manual(values = c("Downregulated" = "#56B4E9", "Upregulated" = "#CC79A7")) +
+  geom_text(
+    aes(y = label_y, label = compound, hjust = label_hjust),
+    angle = 90, vjust = 0.35, size = 3
+    ) +
+  theme_bw() +
+  labs(y="Number of genes",
+       x="") +
+  
+  #geom_point(aes(y=-8900, col=Type_simp), size=2 ) +
+  
+  facet_grid(~Type_simp) +
+  
+  theme(
+    #axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    
+    panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),  
+    axis.line = element_line(),          
+    axis.ticks = element_line(),
+    
+    legend.text = element_text(size = 20),
+    legend.title = element_blank(),
+    legend.position = c(0.99,0.05),
+    legend.justification = c("right", "bottom"),
+    legend.background = element_rect(color = "black", fill = "white")
+  ) +
+  guides(
+    fill = guide_legend(reverse = TRUE),
+    col = guide_legend(ncol = 4)  # Split color legend into 2 columns
+  )
 ```
 
 
 ### per compound heatmapping
 ```{r}
-doseresponse_norm %>%
-  filter(!is.na(value), 
-         is.finite(value)) %>%
-  distinct(Genes, compound, dose, .keep_all = TRUE) %>%
-  mutate(log2FC = log2(value / value[dose == 0.1]))
-```
-
-
-```{r}
-doseresponse_log2FC <- doseresponse_norm %>%
-  filter(!is.na(value), 
-         is.finite(value)) %>%
-  distinct(Genes, compound, dose, .keep_all = TRUE) %>%
-  mutate(
-    log2FC = log2(value / value[dose == 0.1]),
-    compound = factor(compound, levels=compound_ranked_regulated)
-    ) %>%
+doseresponse_log2FC <- comparison_data_wide %>%
+  select(compound, Genes, starts_with("log2FC"), -log2FC_0.1) %>%
+  pivot_longer(
+    cols = starts_with("log2FC"), 
+    names_to = "dose", 
+    values_to = "log2FC",
+    names_transform = list(dose = ~ str_remove(., "log2FC_"))
+  ) %>%
+  left_join(compounds_with_MoA)  %>%
   arrange(compound) %>%
-  filter(dose != 0.1)
+  mutate(
+    compound = factor(compound, levels = compound_ranked_regulated)
+  )
 
 doseresponse_log2FC
 ```
 
 ```{r}
-n_compounds <- 3
+n_compounds <- 5
 selected_compounds <- compound_ranked_regulated[1:n_compounds]
 
 heatmap_data <- doseresponse_log2FC %>%
@@ -685,7 +752,9 @@ conc_colnames <- heatmap_data %>%
 
 compound_group <- data.frame(
   compound = rep(selected_compounds, each = 5)
-)
+) %>%
+  left_join(compounds_with_MoA,
+            by = "compound")
 rownames(compound_group) <- colnames(heatmap_data_matrix)
 
 # Plot
@@ -698,8 +767,8 @@ pheatmap(
   na_col = "grey80",
   show_rownames = FALSE,
   show_colnames = TRUE,
-  annotation_col = compound_group, 
-  annotation_names_col = FALSE,
+  #annotation_col = compound_group, 
+  #annotation_names_col = FALSE,
 )
 ```
 
@@ -797,4 +866,37 @@ Either clusterProfiler or topGO for GO term enrichtment.
 ## Other things we could look at
 For the volcano plot displayed in Extended Data Fig. 2b assessing the quantitative reproducibility, the 48 DMSO controls were randomly assigned into two equally sized groups. After median centering normalization of the LFQ intensities of the picked FDR gene group output and filtering for completeness in the dataset, a two-sided Student’s t-test was performed for all 4,694 proteins. P values were corrected for multiple hypothesis testing using the FDR approach using the R package fdrtool (v.1.2.17).
 
+#TEST
+```{r}
+selected_genes <- c("LCMT1")
+selected_compounds <- c("Romidepsin")
+selected_palette <- palette.colors(length(unique(selected_genes))+1)[-1] #Okabe-Ito minus black
+
+doseresponse_norm %>%
+  filter(
+    Genes %in% selected_genes,
+    compound %in% selected_compounds
+    ) %>%
+  ggplot(aes(x=dose, y=value, col=Genes)) +
+    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
+    geom_point() +
+    scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
+                  labels = scales::trans_format("log10", scales::math_format(10^.x)),
+                  expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0,0)) +
+    scale_color_manual(values = selected_palette) +
+    labs(
+      x="concentration (nM)",
+      y="Relative intensity",
+      color = "Proteins"
+      ) +
+    facet_wrap(~compound, scales = "free_y") +
+    theme_minimal() +
+    theme(
+      panel.grid.major = element_blank(), 
+      panel.grid.minor = element_blank(),  
+      axis.line = element_line(),          
+      axis.ticks = element_line()          
+    )
+```
 
