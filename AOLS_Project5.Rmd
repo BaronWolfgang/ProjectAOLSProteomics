@@ -723,7 +723,7 @@ doseresponse_log2FC <- comparison_data_wide %>%
 doseresponse_log2FC
 ```
 
-```{r}
+```{r, fig.width=14}
 n_compounds <- 5
 selected_compounds <- compound_ranked_regulated[1:n_compounds]
 
@@ -740,7 +740,7 @@ heatmap_data_matrix <- heatmap_data %>%
   mutate(
     across(
       everything(),  
-      ~ replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE))
+      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
       )
     ) %>%
   as.matrix()
@@ -753,7 +753,7 @@ conc_colnames <- heatmap_data %>%
 compound_group <- data.frame(
   compound = rep(selected_compounds, each = 5)
 ) %>%
-  left_join(compounds_with_MoA,
+  left_join(compounds_with_MoA %>% select(compound, Type_simp),
             by = "compound")
 rownames(compound_group) <- colnames(heatmap_data_matrix)
 
@@ -767,8 +767,8 @@ pheatmap(
   na_col = "grey80",
   show_rownames = FALSE,
   show_colnames = TRUE,
-  #annotation_col = compound_group, 
-  #annotation_names_col = FALSE,
+  annotation_col = compound_group, 
+  annotation_names_col = FALSE,
 )
 ```
 
