@@ -433,6 +433,40 @@ doseresponse_norm %>%
 For the heatmap in the paper: The heatmap depicts the combined, preprocessed GO term enrichment results after hierarchically clustering of both rows and columns using Pearson correlation as a distance metric and Weighted Pair Group Method with arithmetic mean as the agglomerative method.
 
 ### most differential compounds
+#### Comparison data
+```{r}
+comparison_data <- doseresponse_norm %>%
+  filter(dose %in% c(1e-1, 10000), # we want to compare highest vs lowest (baseline) conditions
+         !is.na(value), #there are 3,060 na's
+         is.finite(value) 
+         ) %>%
+  group_by(Genes, compound) %>%
+  mutate(n = n(),
+         compound = factor(compound, levels=compound_ranked_regulated)) %>%
+  filter(n == 2) %>%
+  select(compound, Genes, dose, value) %>%
+  arrange(compound, Genes, dose) %>%
+  ungroup()
+
+comparison_data
+```
+
+```{r}
+comparison_data_wide <- comparison_data %>%
+  pivot_wider(names_from = dose, values_from = value, names_prefix = "dose_") %>%
+  mutate(
+    log2FC = log2(dose_10000 / dose_0.1),
+    regulation = case_when(
+      log2FC > log2(1.5) ~ "upregulated",
+      log2FC < log2(0.7) ~ "downregulated", 
+      TRUE ~ "not_regulated"
+    )
+  ) 
+
+comparison_data_wide
+```
+
+
 #### Genecount
 ```{r}
 comparison_data_summary <- comparison_data_wide %>% 
@@ -527,15 +561,18 @@ compounds_with_MoA
 compounds_with_MoA %>% pull() %>% table() 
 
 compounds_with_MoA_simp <- compounds_with_MoA %>% 
-  mutate(compound_simp = case_when(
-    compound == "Small molecule" ~ "Other",
-    compound == "Hormone-like" ~ "Other",
-    compound == "Cytp450" ~ "Other",
-    compound == "Calcineurin inhibitor" ~ "Other",
-    TRUE ~ compound
+  mutate(Type_simp = case_when(
+    Type == "Small molecule" ~ "Other",
+    Type == "Hormone-like" ~ "Other",
+    Type == "CytP450 inhibitor " ~ "Other",
+    Type == "Calcineurin inhibitor" ~ "Other",
+    Type == "HDMi" ~ "Other",        
+    Type == "MTi" ~ "Other",    
+    Type == "NFAT activation inhibitor" ~ "Other",    
+    TRUE ~ Type
   ))
 
-length(compounds_with_MoA_simp %>% unique())
+compounds_with_MoA_simp %>% pull(Type_simp) %>% table()
 
 paper_compound_types <- c()
 ```
