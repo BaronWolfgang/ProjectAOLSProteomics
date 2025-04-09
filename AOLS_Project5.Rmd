@@ -651,6 +651,38 @@ comparison_data_summary %>%
 
 #### (Fernando) grouped by type
 ```{r, fig.width=28}
+# Combine all drug types into a single plot with facets
+full_comp <- comparison_data_summary %>%
+    left_join(compounds_with_MoA)
+
+type_counts <- compounds_with_MoA %>%
+    count(Type, name = "drug_type_count") %>%
+    arrange(desc(drug_type_count))
+
+# Update drug types with less than 5 counts to "Other"
+full_comp <- full_comp %>%
+    mutate(Type = ifelse(Type %in% type_counts$Type[type_counts$drug_type_count < 5], "Other", Type))
+
+type_counts <- full_comp %>%
+    count(Type, name = "drug_type_count") %>%
+    arrange(desc(drug_type_count))
+
+# Create a new factor for compound with levels ordered by drug type
+full_comp <- full_comp %>%
+    mutate(
+        compound = factor(compound, levels = compound_ranked_regulated),
+        drug_type_group = factor(Type, levels = type_counts$Type)
+    )
+
+# Count the number of compounds in each drug type group
+drug_type_counts <- full_comp %>%
+    group_by(drug_type_group) %>%
+    summarize(compound_count = n_distinct(compound)) %>%
+    ungroup()
+
+# Generate a color palette for facets
+facet_colors <- scales::hue_pal()(length(unique(full_comp$drug_type_group)))
+
 ggplot(full_comp, aes(x = compound)) +
     geom_rect(
         aes(
