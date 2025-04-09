@@ -29,7 +29,10 @@ my_packages_to_install <- c(
   "broom",
   "tibble",
   "pheatmap",
-  "fuzzyjoin"
+  "fuzzyjoin",
+  "scales",
+  "colorspace",
+  "org.Hs.eg.db"
 )
 
 BiocManager_packages_to_install <- c(
@@ -48,6 +51,9 @@ for (package in packages_to_install) {
 
 conflict_prefer("select", "dplyr")
 conflict_prefer("filter", "dplyr")
+conflict_prefer("desc", "dplyr")
+conflict_prefer("rename", "clusterProfiler")
+
 
 if (!require("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
@@ -643,68 +649,113 @@ comparison_data_summary %>%
   )
 ```
 
-#### FIXME
-adjust using Fernando's code
-```{r, fig.width=14}
-comparison_data_summary %>% 
-  left_join(compounds_with_MoA) %>%
-  mutate(
-    compound = factor(compound, levels=compound_ranked_regulated),
-    label_y = ifelse(
-      upregulated < downregulated,
-      upregulated + 10,            
-      -downregulated - 10      
-    ),
-    label_hjust = ifelse(
-      upregulated < downregulated,
-      0, 1
-    )
-  ) %>%
-  ggplot(aes(x = compound)) +
-  geom_bar(aes(y = upregulated, fill = "Upregulated"), stat = "identity") +
-  geom_bar(aes(y = -downregulated, fill = "Downregulated"), stat = "identity") +
-  scale_y_continuous(
-    limits = c(-9000,5000),
-    expand = c(0,0),
-    breaks =seq(-9000, 5000, by = 1000)
-  ) +
-  scale_fill_manual(values = c("Downregulated" = "#56B4E9", "Upregulated" = "#CC79A7")) +
-  geom_text(
-    aes(y = label_y, label = compound, hjust = label_hjust),
-    angle = 90, vjust = 0.35, size = 3
+#### (Fernando) grouped by type
+```{r, fig.width=28}
+ggplot(full_comp, aes(x = compound)) +
+    geom_rect(
+        aes(
+            xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf, fill = drug_type_group
+        ),
+        inherit.aes = FALSE, alpha = 0.2,
+        data = full_comp %>% distinct(drug_type_group),
+        show.legend = FALSE  # Exclude facet-based color fill from the legend
     ) +
-  theme_bw() +
-  labs(y="Number of genes",
-       x="") +
+    geom_bar(aes(y = upregulated, fill = "Upregulated"), stat = "identity", show.legend=FALSE) +
+    geom_bar(aes(y = -downregulated, fill = "Downregulated"), stat = "identity", show.legend=FALSE) +
+
+    geom_text(
+        aes(
+            y = ifelse(upregulated < downregulated, upregulated + 10, -downregulated - 10),
+            label = compound,
+            hjust = ifelse(upregulated < downregulated, 0, 1)
+        ),
+        angle = 90, vjust = 0.35, size = 4.5
+    ) +
   
-  #geom_point(aes(y=-8900, col=Type_simp), size=2 ) +
+    geom_point(aes(x=1,y=1, shape = "Upregulated"), size=0) +
+    geom_point(aes(x=1,y=1, shape = "Downregulated"), size=0) +
   
-  facet_grid(~Type_simp) +
+    scale_shape_manual(values = c("Upregulated" = 22, "Downregulated" = 22) ,breaks = c("Upregulated", "Downregulated")) +
   
-  theme(
-    #axis.text.x = element_text(angle = 90, hjust = 1, vjust=0.5),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    
-    panel.grid.major = element_blank(), 
-    panel.grid.minor = element_blank(),  
-    axis.line = element_line(),          
-    axis.ticks = element_line(),
-    
-    legend.text = element_text(size = 20),
-    legend.title = element_blank(),
-    legend.position = c(0.99,0.05),
-    legend.justification = c("right", "bottom"),
-    legend.background = element_rect(color = "black", fill = "white")
-  ) +
-  guides(
-    fill = guide_legend(reverse = TRUE),
-    col = guide_legend(ncol = 4)  # Split color legend into 2 columns
-  )
+    scale_y_continuous(
+      limits = c(-9000, 5000),
+      expand = c(0, 0),
+      breaks = seq(-9000, 5000, by = 1000)
+    ) +
+  
+    facet_grid(
+        ~ drug_type_group,
+        scales = "free_x",
+        space = "free_x",
+        labeller = label_wrap_gen(width = 10)
+    ) +
+  
+    scale_fill_manual(
+        values = c(
+            "Upregulated" = "#CC79A7",
+            "Downregulated" = "#56B4E9",
+            setNames(facet_colors, levels(full_comp$drug_type_group))
+        )
+    ) +
+    labs(
+        y = "Number of regulated proteins",
+        x = "",
+        fill = "Regulation",
+        #title = "Proteins Regulated by Drug Type"
+    ) +
+  
+    theme_bw() +
+
+    theme(
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.title.y = element_text(size = 24),
+        axis.text.y = element_text(size = 20),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(),
+        axis.ticks = element_line(),
+        strip.background = element_rect(fill = "white"),
+        strip.text = element_text(size = 16), # Adjust facet label text size
+        panel.background = element_rect(fill = "white", colour = "white"),
+        
+        legend.text = element_text(size = 20),
+        legend.title = element_blank(),
+        legend.position = c(0.99,0.05),
+        legend.justification = c("right", "bottom"),
+        legend.background = element_rect(color = "black", fill = "white")
+    ) +
+    guides(
+      shape = guide_legend(
+        override.aes = list(
+          fill = c("#CC79A7", "#56B4E9"),
+          labels = c("Upregulated", "Downregulated"),
+          size = 10
+          )
+        )
+    )
+  
+    #guides(
+    #    fill = guide_legend(
+    #        override.aes = list(
+    #        fill = c("#CC79A7", "#56B4E9", rep(NA, length(facet_colors))),
+    #        size = c(1,1,rep(0, length(facet_colors))),
+    #        shape = c(16, 16, rep(NA, length(facet_colors)))
+    #        )
+    #    )
+    #)
+
+ggsave(
+    filename = "plots/all_drug_up_down.png",
+    dpi = 300,
+    width = 28,
+    height = 14
+)
 ```
 
 
-### per compound heatmapping
+### Heatmap
+#### per compound heatmapping
 ```{r}
 doseresponse_log2FC <- comparison_data_wide %>%
   select(compound, Genes, starts_with("log2FC"), -log2FC_0.1) %>%
@@ -723,7 +774,40 @@ doseresponse_log2FC <- comparison_data_wide %>%
 doseresponse_log2FC
 ```
 
-```{r, fig.width=14}
+```{r}
+compounds_with_MoA
+```
+
+
+Getting colours by using the type and then shifting using the specific compound
+```{}
+library(RColorBrewer)
+
+# 1. Create a 13-color palette combining Set1 and Set2 for Type_simp
+type_palette <- c(brewer.pal(9, "Set1"), brewer.pal(4, "Set2"))
+
+# 2. Create a color palette for compounds (144 compounds)
+# Use Set3 or a larger color scale for more colors
+compound_palette <- colorRampPalette(brewer.pal(12, "Set3"))(144)
+
+# Assign these colors to the Type_simp values (13 unique types)
+names(type_palette) <- unique(compounds_with_MoA$Type_simp)
+
+# Verify the palette for Type_simp
+type_palette
+
+compound_colors <- compounds_with_MoA %>%
+  mutate(
+    type_color = type_palette[Type_simp],  # Assign color based on Type_simp
+    compound_color = compound_palette[row_number()]  # Assign unique color based on compound (144 compounds)
+  )
+
+compound_colors
+
+```
+
+
+```{, fig.width=14}
 n_compounds <- 5
 selected_compounds <- compound_ranked_regulated[1:n_compounds]
 
@@ -757,6 +841,21 @@ compound_group <- data.frame(
             by = "compound")
 rownames(compound_group) <- colnames(heatmap_data_matrix)
 
+#compound_colors_subset <- compound_colors %>% 
+#  filter(
+#    compound %in% compound_group$compound,
+#    Type_simp %in% compound_group$Type_simp
+#  )
+
+
+colnames(compound_group) <- c("Compound", "Type")
+
+# Generate annotation colors for compounds and types
+#annotation_colors <- list(
+#  Compound = setNames(compound_colors_subset$compound_color, compound_colors_subset$compound),  
+#  Type = setNames(type_palette[compound_group$Type], compound_group$Type)  
+#)
+
 # Plot
 pheatmap(
   heatmap_data_matrix,
@@ -768,93 +867,248 @@ pheatmap(
   show_rownames = FALSE,
   show_colnames = TRUE,
   annotation_col = compound_group, 
-  annotation_names_col = FALSE,
+  #annotation_colors = annotation_colors,
+  #annotation_names_col = FALSE, 
+  legend_labels = c("Compound", "Type") 
 )
-```
-
-### highest vs baseline heatmap
-Comparison data
-```{r}
-comparison_data <- doseresponse_norm %>%
-  filter(dose %in% c(1e-1, 10000), # we want to compare highest vs lowest (baseline) conditions
-         !is.na(value), #there are 3,060 na's
-         is.finite(value) 
-         ) %>%
-  group_by(Genes, compound) %>%
-  mutate(n = n(),
-         compound = factor(compound, levels=compound_ranked_regulated)) %>%
-  filter(n == 2) %>%
-  select(compound, Genes, dose, value) %>%
-  arrange(compound, Genes, dose) %>%
-  ungroup()
-
-comparison_data
-```
-
-```{r}
-comparison_data_wide <- comparison_data %>%
-  pivot_wider(names_from = dose, values_from = value, names_prefix = "dose_") %>%
-  mutate(
-    log2FC = log2(dose_10000 / dose_0.1),
-    regulation = case_when(
-      log2FC > log2(1.5) ~ "upregulated",
-      log2FC < log2(0.7) ~ "downregulated", 
-      TRUE ~ "not_regulated"
-    )
-  ) 
-
-comparison_data_wide
 ```
 
 ```{r, fig.width=14}
-heatmap_matrix <- comparison_data_wide %>%
-  mutate(across(everything(), ~replace(., is.infinite(.), NA))) %>%  # Replace -Inf and Inf with NA
-  select(Genes, compound, log2FC) %>%  # Keep only the Genes, compound, and log2FC columns
-  pivot_wider(names_from = Genes, values_from = log2FC) %>%  # Pivot to wide format: Genes as columns, log2FC as values
-  column_to_rownames("compound") %>%  # Set compound as row names
-  as.matrix() 
+n_compounds <- 10
+selected_compounds <- compound_ranked_regulated[1:n_compounds]
 
-heatmap_matrix[is.na(heatmap_matrix)] <- 0
+heatmap_data <- doseresponse_log2FC %>%
+  filter(!is.na(Genes), compound %in% selected_compounds) %>% 
+  mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
+  select(Genes, compound_dose, log2FC) %>%
+  pivot_wider(names_from = compound_dose, values_from = log2FC) 
 
-# Create clustered heatmap
+heatmap_data
+
+heatmap_data_matrix <- heatmap_data %>%
+  column_to_rownames("Genes") %>%
+  mutate(
+    across(
+      everything(),  
+      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+      )
+    ) %>%
+  as.matrix()
+
+conc_colnames <- heatmap_data %>%
+  select(-Genes) %>%
+  colnames() %>%
+  unique()
+
+compound_group <- data.frame(
+  compound = rep(selected_compounds, each = 5)
+) %>%
+  left_join(compounds_with_MoA %>% select(compound, Type_simp),
+            by = "compound") %>%
+  select(-compound)
+rownames(compound_group) <- colnames(heatmap_data_matrix)
+
+#compound_colors_subset <- compound_colors %>% 
+#  filter(
+#    compound %in% compound_group$compound,
+#    Type_simp %in% compound_group$Type_simp
+#  )
+
+
+colnames(compound_group) <- c("Type")
+
+# Generate annotation colors for compounds and types
+#annotation_colors <- list(
+#  Compound = setNames(compound_colors_subset$compound_color, compound_colors_subset$compound),  
+#  Type = setNames(type_palette[compound_group$Type], compound_group$Type)  
+#)
+
+# Plot
 pheatmap(
-  heatmap_matrix,
+  heatmap_data_matrix,
   color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
   cluster_rows = TRUE,
   cluster_cols = TRUE,
-  main = "Hierarchical Clustering of log2FC (10,000 nm vs 0,1 nm)",
+  main = "Hierarchical Clustering of log2FC for Selected Compounds",
   na_col = "grey80",
-  show_rownames = F,  # Remove row labels
-  show_colnames = F   # Remove column labels
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+  annotation_col = compound_group, 
+  #annotation_colors = annotation_colors,
+  #annotation_names_col = FALSE, 
+  legend_labels = c("Compound", "Type") 
+)
+```
+
+```{r, fig.width=14}
+n_compounds <- length(compound_ranked_regulated)
+selected_compounds <- compound_ranked_regulated[1:n_compounds]
+
+heatmap_data <- doseresponse_log2FC %>%
+  filter(!is.na(Genes), compound %in% selected_compounds) %>% 
+  mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
+  select(Genes, compound_dose, log2FC) %>%
+  pivot_wider(names_from = compound_dose, values_from = log2FC) 
+
+heatmap_data
+
+heatmap_data_matrix <- heatmap_data %>%
+  column_to_rownames("Genes") %>%
+  mutate(
+    across(
+      everything(),  
+      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+      )
+    ) %>%
+  as.matrix()
+
+conc_colnames <- heatmap_data %>%
+  select(-Genes) %>%
+  colnames() %>%
+  unique()
+
+compound_group <- data.frame(
+  compound = rep(selected_compounds, each = 5)
+) %>%
+  left_join(compounds_with_MoA %>% select(compound, Type_simp),
+            by = "compound") %>%
+  select(-compound)
+rownames(compound_group) <- colnames(heatmap_data_matrix)
+
+#compound_colors_subset <- compound_colors %>% 
+#  filter(
+#    compound %in% compound_group$compound,
+#    Type_simp %in% compound_group$Type_simp
+#  )
+
+
+colnames(compound_group) <- c("Type")
+
+# Generate annotation colors for compounds and types
+#annotation_colors <- list(
+#  Compound = setNames(compound_colors_subset$compound_color, compound_colors_subset$compound),  
+#  Type = setNames(type_palette[compound_group$Type], compound_group$Type)  
+#)
+
+# Plot
+pheatmap(
+  heatmap_data_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = "Hierarchical Clustering of log2FC for Selected Compounds",
+  na_col = "grey80",
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+  annotation_col = compound_group, 
+  #annotation_colors = annotation_colors,
+  #annotation_names_col = FALSE, 
+  legend_labels = c("Compound", "Type") 
 )
 ```
 
 
-### Linear model
-```{r}
-lm_results <- comparison_data %>%
-  group_by(Genes, compound) %>%
-  nest() %>%
+### compared to baseline heatmap 
+```{r, fig.width=14}
+selected_dose <- 10000
+
+heatmap_full <- doseresponse_log2FC %>%
+  filter(dose == selected_dose) %>%
+  select(Genes, compound, log2FC) %>%
+  pivot_wider(names_from = compound, values_from = log2FC) 
+
+heatmap_full_matrix <- heatmap_full %>%
+  filter(!is.na(Genes)) %>%
+  distinct(Genes, .keep_all = TRUE) %>%
+  column_to_rownames("Genes") %>%
   mutate(
-    model = map(data, ~ lm(value ~ dose, data = .x)),   # Linear model with `dose`
-    results = map(model, tidy)                          # Extract model results
+    across(
+      everything(),  
+      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+      )
+    ) %>%
+  as.matrix()
+
+compound_group_full <- data.frame(
+  compound = colnames(heatmap_full_matrix)
   ) %>%
-  unnest(results)  
+  left_join(compounds_with_MoA %>% select(compound, Type_simp),
+            by = "compound") %>%
+  select(-compound)
+rownames(compound_group_full) <- colnames(heatmap_full_matrix)
 
-lm_results
+colnames(compound_group_full) <-"Type"
+
+compound_group_full
+
+pheatmap(
+  heatmap_full_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = paste0("Hierarchical Clustering of log2FC ", selected_dose, " (nm)"),
+  na_col = "grey80",
+  show_rownames = F,  # Remove row labels
+  show_colnames = F,   # Remove column labels
+  annotation_col = compound_group_full,
+  legend_labels = "Type" 
+)
 ```
 
+```{r, fig.width=14}
+selected_dose <- 100
 
-```{r}
-saveRDS(lm_results)
-```
+heatmap_full <- doseresponse_log2FC %>%
+  filter(dose == selected_dose) %>%
+  select(Genes, compound, log2FC) %>%
+  pivot_wider(names_from = compound, values_from = log2FC) 
 
-```{r}
-lm_results_adj <- lm_results %>%
+heatmap_full_matrix <- heatmap_full %>%
+  filter(!is.na(Genes)) %>%
+  distinct(Genes, .keep_all = TRUE) %>%
+  column_to_rownames("Genes") %>%
   mutate(
-    p_adj = p.adjust(p_value, method = "BH")
-  )
+    across(
+      everything(),  
+      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+      )
+    ) %>%
+  as.matrix()
+
+compound_group_full <- data.frame(
+  compound = colnames(heatmap_full_matrix)
+  ) %>%
+  left_join(compounds_with_MoA %>% select(compound, Type_simp),
+            by = "compound") %>%
+  select(-compound)
+rownames(compound_group_full) <- colnames(heatmap_full_matrix)
+
+colnames(compound_group_full) <-"Type"
+
+compound_group_full
+
+pheatmap(
+  heatmap_full_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = paste0("Hierarchical Clustering of log2FC ", selected_dose, " (nm)"),
+  na_col = "grey80",
+  show_rownames = F,  # Remove row labels
+  show_colnames = F,   # Remove column labels
+  annotation_col = compound_group_full,
+  legend_labels = "Type" 
+)
 ```
+
 
 ## 3. Gene annotation
 In the paper GO term enrichment analysis was performed for each drug individually using the clusterProfiler R package (v.4.2.2.). Each drug dataset was tested for enrichment of GO terms on all levels (cellular compartment, molecular function and biological process) both in up- and down-regulated proteins with the whole drug dataset as the background. P values were corrected using the FDR approach and the q value cut-off was set to 1. The enrichment results for up-and down-regulation were combined, retaining the more significant entry for duplications. After combining the enrichment results for all drugs, the q values were log transformed, multiplied by −1 for GO terms enriched in down-regulation and z-scored for each GO term individually
@@ -862,41 +1116,468 @@ In the paper GO term enrichment analysis was performed for each drug individuall
 A second GO term enrichtment analysis was done(P value cut-off, 0.05; P value correction, FDR approach; Subontology, Molecular Function; whole H. sapiens database as background)
 
 Either clusterProfiler or topGO for GO term enrichtment.
-
-## Other things we could look at
-For the volcano plot displayed in Extended Data Fig. 2b assessing the quantitative reproducibility, the 48 DMSO controls were randomly assigned into two equally sized groups. After median centering normalization of the LFQ intensities of the picked FDR gene group output and filtering for completeness in the dataset, a two-sided Student’s t-test was performed for all 4,694 proteins. P values were corrected for multiple hypothesis testing using the FDR approach using the R package fdrtool (v.1.2.17).
-
-#TEST
+### Marloes (all annotations)
 ```{r}
-selected_genes <- c("LCMT1")
-selected_compounds <- c("Romidepsin")
-selected_palette <- palette.colors(length(unique(selected_genes))+1)[-1] #Okabe-Ito minus black
+all_genes <- doseresponse_log2FC %>% pull(Genes) %>% unique()
 
-doseresponse_norm %>%
-  filter(
-    Genes %in% selected_genes,
-    compound %in% selected_compounds
-    ) %>%
-  ggplot(aes(x=dose, y=value, col=Genes)) +
-    geom_smooth(method=drm, method.args=list(fct=L.4()), se=FALSE) +
-    geom_point() +
-    scale_x_log10(breaks = c(0.1,1, 10, 100, 1000, 10000), 
-                  labels = scales::trans_format("log10", scales::math_format(10^.x)),
-                  expand = c(0, 0)) +
-    scale_y_continuous(expand = c(0,0)) +
-    scale_color_manual(values = selected_palette) +
-    labs(
-      x="concentration (nM)",
-      y="Relative intensity",
-      color = "Proteins"
-      ) +
-    facet_wrap(~compound, scales = "free_y") +
-    theme_minimal() +
-    theme(
-      panel.grid.major = element_blank(), 
-      panel.grid.minor = element_blank(),  
-      axis.line = element_line(),          
-      axis.ticks = element_line()          
-    )
+gene_ids <- bitr(all_genes, fromType="SYMBOL", toType="ENTREZID", OrgDb=org.Hs.eg.db)
+
+go_slim <- enrichGO(gene          = gene_ids$ENTREZID,
+                    OrgDb         = org.Hs.eg.db,
+                    keyType       = "ENTREZID",
+                    ont           = "BP", # Biological Process
+                    readable      = TRUE,
+                    pool          = TRUE)
+go_slim_df <- as.data.frame(go_slim)
+
+go_slim_df %>% arrange(desc(Count)) 
+
+#go_slim_simp <- clusterProfiler::simplify(
+#  go_slim,
+#  cutoff = 0.3,
+#  by = "p.adjust",
+#  select_fun = min,
+#  measure = "Wang"
+#)
+
+#go_slim_simp_df <- as.data.frame(go_slim_simp)
+
+go_long <- go_slim_df %>%
+  select(ID, Description, geneID, Count) %>%
+  separate_rows(geneID, sep = "/") %>%
+  mutate(Genes = geneID) %>%
+  select(Genes, ID, Description, Count)
+  #rename(GeneSymbol = geneID,
+  #       GO_Category_ID = ID,
+  #       GO_Category_Description = Description)
+
+# Check result
+go_long %>% select(ID) %>% unique() %>% pull() %>% length()
 ```
+
+
+```{r}
+GO_group_biggest <- go_long %>%
+  group_by(Genes) %>%
+  slice_max(order_by = Count, n=1, with_ties = FALSE) %>%
+  arrange(desc(Count)) %>%
+  select(-ID,Count)
+
+#GO_group_biggest %>% pull(Description) %>% table()
+```
+
+### heatmap with annotated genes
+```{, fig.width=14}
+selected_dose <- 10000
+
+heatmap_full <- doseresponse_log2FC %>%
+  filter(dose == selected_dose) %>%
+  select(Genes, compound, log2FC) %>%
+  pivot_wider(names_from = compound, values_from = log2FC) 
+
+heatmap_full_matrix <- heatmap_full %>%
+  filter(!is.na(Genes)) %>%
+  distinct(Genes, .keep_all = TRUE) %>%
+  column_to_rownames("Genes") %>%
+  mutate(
+    across(
+      everything(),  
+      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+      )
+    ) %>%
+  as.matrix()
+
+col_annotation_full <- data.frame(
+  compound = colnames(heatmap_full_matrix)
+  ) %>%
+  left_join(compounds_with_MoA %>% select(compound, Type_simp),
+            by = "compound") %>%
+  select(-compound)
+rownames(col_annotation_full) <- colnames(heatmap_full_matrix)
+
+colnames(col_annotation_full) <-"Type"
+
+col_annotation_full
+
+row_annotation <- data.frame(
+  Genes = rownames(heatmap_full_matrix)
+) %>%
+  left_join(GO_group_biggest %>% select(Genes, Description),
+            by = "Genes") %>%
+  column_to_rownames("Genes") %>%
+  mutate(Description = case_when(
+    is.na(Description) ~ "NA",
+    TRUE ~ Description
+    )
+  )
+
+pheatmap(
+  heatmap_full_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = paste0("Hierarchical Clustering of log2FC ", selected_dose, " (nm)"),
+  na_col = "grey80",
+  show_rownames = F,  # Remove row labels
+  show_colnames = F,   # Remove column labels
+  annotation_col = col_annotation_full,
+  #legend_labels = "Type",
+  annotation_row = row_annotation
+)
+```
+
+### FIXME
+mssing variable top50_total 
+```{}
+genes <- rownames(top50_total)
+gene_entrez <- mapIds(
+  org.Hs.eg.db,
+  keys = genes,
+  column = "ENTREZID",
+  keytype = "SYMBOL",
+  multiVals = "first"
+)
+kegg_top <-  enrichKEGG(gene = gene_entrez, 
+                                  organism = "hsa")
+
+gene_to_pathway <- data.frame(
+  Gene = unlist(strsplit(kegg_top$geneID, "/")),
+  Pathway = rep(kegg_top$subcategory, lengths(strsplit(kegg_top$geneID, "/")))
+)
+
+
+gene_to_pathway$Gene <- mapIds(
+  org.Hs.eg.db,
+  keys = gene_to_pathway$Gene,
+  column = "SYMBOL",
+  keytype = "ENTREZID",
+  multiVals = "first"
+)
+
+
+# Ensure all genes in the expression matrix are mapped
+gene_to_pathway <- merge(
+  data.frame(Gene = genes),
+  gene_to_pathway,
+  by = "Gene",
+  all.x = TRUE
+)
+
+# Fill NA pathways for unmapped genes
+gene_to_pathway$Pathway[is.na(gene_to_pathway$Pathway)] <- "None"
+gene_to_pathway_unique_50 <- gene_to_pathway %>%
+  distinct(Gene, .keep_all = TRUE)
+```
+
+### Thalidomide
+#### Imputed all -Inf
+```{r}
+selected_compounds <- 'Thalidomide'
+heatmap_data <- doseresponse_log2FC %>%
+  filter(!is.na(Genes), compound %in% selected_compounds) %>% 
+  mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
+  select(Genes, compound_dose, log2FC) %>%
+  pivot_wider(names_from = compound_dose, values_from = log2FC) 
+
+heatmap_data
+
+heatmap_data_matrix <- heatmap_data %>%
+  column_to_rownames("Genes") %>%
+  #.[rowSums(is.na(.) | . == -Inf) < ncol(.), ] %>%
+  #mutate(
+  #  across(
+  #    everything(),
+  #   ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+  #  )
+  #) %>%
+  mutate(
+    across(
+      everything(),  
+      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+      )
+    ) %>%
+  as.matrix()
+
+conc_colnames <- heatmap_data %>%
+  select(-Genes) %>%
+  colnames() %>%
+  unique()
+
+compound_group <- data.frame(
+  compound = rep(selected_compounds, each = 5)
+)
+rownames(compound_group) <- colnames(heatmap_data_matrix)
+
+
+# Plot
+pheatmap::pheatmap(
+  heatmap_data_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = "Hierarchical Clustering of the proteins for Thalidomide",
+  na_col = "grey80",
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  #annotation_col = compound_group, 
+  annotation_names_col = FALSE
+)
+```
+
+#### Remove rows containing only -Inf or NA
+I removed all rows (Genes) that have only -Inf or NA:
+```{r}
+selected_compounds <- 'Thalidomide'
+heatmap_data <- doseresponse_log2FC %>%
+  filter(!is.na(Genes), compound %in% selected_compounds) %>% 
+  mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
+  select(Genes, compound_dose, log2FC) %>%
+  pivot_wider(names_from = compound_dose, values_from = log2FC) 
+
+heatmap_data
+
+heatmap_data_matrix <- heatmap_data %>%
+  column_to_rownames("Genes") %>%
+  .[rowSums(is.na(.) | . == -Inf) < ncol(.), ] %>%
+  mutate(
+    across(
+      everything(),
+     ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+    )
+  ) %>%
+  #mutate(
+  #  across(
+  #    everything(),  
+  #    ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+  #    )
+  #  ) %>%
+  as.matrix()
+
+conc_colnames <- heatmap_data %>%
+  select(-Genes) %>%
+  colnames() %>%
+  unique()
+
+compound_group <- data.frame(
+  compound = rep(selected_compounds, each = 5)
+)
+rownames(compound_group) <- colnames(heatmap_data_matrix)
+
+
+# Plot
+pheatmap::pheatmap(
+  heatmap_data_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = "Hierarchical Clustering of the proteins for Thalidomide",
+  na_col = "grey80",
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  #annotation_col = compound_group, 
+  annotation_names_col = FALSE
+)
+
+```
+
+#### Remove all rows with any -Inf or NA
+```{r}
+selected_compounds <- 'Thalidomide'
+heatmap_data <- doseresponse_log2FC %>%
+  filter(!is.na(Genes), compound %in% selected_compounds) %>% 
+  mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
+  select(Genes, compound_dose, log2FC) %>%
+  pivot_wider(names_from = compound_dose, values_from = log2FC) 
+
+heatmap_data
+
+heatmap_data_matrix <- heatmap_data %>%
+  column_to_rownames("Genes") %>%
+  .[rowSums(. == -Inf) == 0, ] %>%
+  mutate(
+    across(
+      everything(),
+     ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+    )
+  ) %>%
+  #mutate(
+  #  across(
+  #    everything(),  
+  #    ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+  #    )
+  #  ) %>%
+  as.matrix()
+
+conc_colnames <- heatmap_data %>%
+  select(-Genes) %>%
+  colnames() %>%
+  unique()
+
+compound_group <- data.frame(
+  compound = rep(selected_compounds, each = 5)
+)
+rownames(compound_group) <- colnames(heatmap_data_matrix)
+
+
+# Plot
+p <- pheatmap::pheatmap(
+  heatmap_data_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  main = "Hierarchical Clustering of the proteins for Thalidomide",
+  na_col = "grey80",
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  #annotation_col = compound_group, 
+  annotation_names_col = FALSE
+)
+
+```
+
+```{r}
+k_clusters <- 6
+row_hclust <- p$tree_row
+cluster_assignments <- cutree(row_hclust, k = k_clusters)
+
+# 3. Create row annotation dataframe
+row_annotation <- data.frame(Cluster = as.factor(cluster_assignments))
+rownames(row_annotation) <- names(cluster_assignments)
+
+# 4. Replot heatmap with row annotation
+p <- pheatmap(
+  heatmap_data_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+                    seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
+  cluster_rows = TRUE,
+  cluster_cols = FALSE,
+  main = paste0("Hierarchical Clustering of the proteins for Thalidomide"),
+  na_col = "grey80",
+  show_rownames = FALSE,
+  show_colnames = TRUE,
+  annotation_row = row_annotation,
+  annotation_names_row = TRUE
+)
+```
+Visually clusters 2 and three look the most down and upregulated, respectively
+```{r}
+cluster_gene_list <- list(
+  thalomide_clust2_down = names(cluster_assignments[cluster_assignments == 2]),
+  thalomide_clust3_up = names(cluster_assignments[cluster_assignments == 3])
+)
+
+length(unlist(cluster_gene_list))
+```
+
+Stopped here for today
+### start here
+```{r}
+go_results_list <- list()
+
+for(i in 1:3) {
+  
+  cluster_name <- paste0("Cluster_", i)
+  gene_list_symbol <- merged_gene_list[[i]]
+  
+  # Map gene symbols to Entrez IDs
+  gene_list_entrez <- bitr(
+    gene_list_symbol,
+    fromType = "SYMBOL",
+    toType = "ENTREZID",
+    OrgDb = org.Hs.eg.db
+  )
+  
+  if (is.null(gene_list_entrez) || nrow(gene_list_entrez) == 0) {
+    message(paste0(cluster_name, ": No genes mapped — skipping"))
+    next
+  }
+  
+  # Safe GO enrichment
+  go_enrich <- tryCatch({
+    enrichGO(
+      gene          = gene_list_entrez$ENTREZID,
+      OrgDb         = org.Hs.eg.db,
+      keyType       = "ENTREZID",
+      ont           = "BP",
+      pAdjustMethod = "BH"
+    )
+  }, error = function(e) {
+    message(paste0(cluster_name, ": GO enrichment failed — skipping"))
+    return(NULL)
+  })
+  
+  if (is.null(go_enrich) || nrow(go_enrich) == 0) {
+    message(paste0(cluster_name, ": No significant GO terms — skipping plot"))
+    next
+  }
+  
+  # Store result
+  go_results_list[[cluster_name]] <- go_enrich
+  
+  # Plot
+  p <- barplot(go_enrich, showCategory = 10) + 
+       ggtitle(paste0(cluster_name, " GO Enrichment"))
+  
+  print(p)
+  
+}
+
+
+```
+
+
+```{r, fig.height=10, fig.width=10}
+library(clusterProfiler)
+library(dplyr)
+library(ggplot2)
+library(forcats)
+
+# Collect data from all clusters
+plot_data <- data.frame()
+
+for(i in 1:10){
+  
+  cluster_name <- paste0("Cluster_", i)
+  
+  go_enrich <- go_results_list[[cluster_name]]
+  print(nrow(go_enrich))
+  if (is.null(go_enrich) || nrow(go_enrich) == 0) next
+  
+  # Extract GO term and Count of genes in gene set
+  df <- go_enrich@result %>%
+    filter(p.adjust < 0.05) %>%  # Filter significant terms
+    mutate(Cluster = cluster_name) %>%
+    select(Cluster, Description, Count, p.adjust) %>%
+    arrange(p.adjust) %>%  # Sort by p.adjust (or you can change this to Count)
+    head(10)  # Take the top 10 rows after sorting
+  
+  plot_data <- bind_rows(plot_data, df)
+}
+
+# Plot
+ggplot(plot_data, aes(x = Cluster, y = Count, fill = Description)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_bw() +
+  scale_fill_brewer(palette = "Paired") +
+  labs(
+    y = "Gene Count",
+    x = "Cluster",
+    fill = "GO Term",
+    title = "GO Enrichment across Clusters"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(hjust = 0.5)
+  )
+
+
+```
+
 
