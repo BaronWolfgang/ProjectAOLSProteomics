@@ -1458,7 +1458,7 @@ p <- pheatmap(
                     seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
   cluster_rows = TRUE,
   cluster_cols = FALSE,
-  main = paste0("Hierarchical Clustering of the proteins for Thalidomide"),
+  main = paste0("Hierarchical Clustering of the proteins for ", selected_compounds),
   na_col = "grey80",
   show_rownames = FALSE,
   show_colnames = TRUE,
@@ -1466,6 +1466,7 @@ p <- pheatmap(
   annotation_names_row = TRUE
 )
 ```
+
 Visually clusters 2 and three look the most down and upregulated, respectively
 ```{r}
 cluster_gene_list <- list(
