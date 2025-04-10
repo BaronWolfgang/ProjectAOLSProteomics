@@ -37,7 +37,8 @@ my_packages_to_install <- c(
 
 BiocManager_packages_to_install <- c(
   "clusterProfiler", #GO term enrichment analysis from paper
-  "org.Hs.eg.db"
+  "org.Hs.eg.db",
+  "enrichplot"
 )
 
 packages_to_install <- c(base_packages_to_install, my_packages_to_install)
@@ -1777,11 +1778,67 @@ go_cluster3 <- enrichGO(
 
 ```{r, fig.width=14}
 # Plot the top 10 enriched GO terms for cluster 2
-barplot(go_cluster2, showCategory = 10, title = "Top 10 GO Terms for Thalidomide Cluster 2")
+barplot(go_cluster2, showCategory = 15, title = "Top GO Terms for Thalidomide Cluster 2 (downregulated)")
 
-# Plot the top 10 enriched GO terms for cluster 3
-barplot(go_cluster3, showCategory = 10, title = "Top 10 GO Terms for Thalidomide Cluster 3")
+dotplot(go_cluster2, showCategory = 15, title = "Top GO Terms for Thalidomide Cluster 2 (downregulated)")
 
+ggsave(
+    filename = "plots/thalidomideclust2dotplot.png",
+    dpi = 300,
+    width = 14,
+    height = 7
+)
+
+emapplot(pairwise_termsim(go_cluster2))
+
+ggsave(
+    filename = "plots/thalidomideclust2network.png",
+    dpi = 300,
+    width = 14,
+    height = 7
+)
+
+treeplot(pairwise_termsim(go_cluster2))
+
+ggsave(
+    filename = "plots/thalidomideclust2tree.png",
+    dpi = 300,
+    width = 14,
+    height = 7
+)
+
+```
+
+```{r, fig.width=14}
+# Plot the top 10 enriched GO terms for cluster 2
+barplot(go_cluster3, showCategory = 15, title = "Top GO Terms for Thalidomide Cluster 3 (upregulated)")
+
+dotplot(go_cluster3, showCategory = 15, title = "Top GO Terms for Thalidomide Cluster 3 (upregulated)")
+
+ggsave(
+    filename = "plots/thalidomideclust3dotplot.png",
+    dpi = 300,
+    width = 14,
+    height = 7
+)
+
+emapplot(pairwise_termsim(go_cluster3))
+
+ggsave(
+    filename = "plots/thalidomideclust3network.png",
+    dpi = 300,
+    width = 14,
+    height = 7
+)
+
+treeplot(pairwise_termsim(go_cluster3))
+
+ggsave(
+    filename = "plots/thalidomideclust3tree.png",
+    dpi = 300,
+    width = 7,
+    height = 7
+)
 ```
 
 
