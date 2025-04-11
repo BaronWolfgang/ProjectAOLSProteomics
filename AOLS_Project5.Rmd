@@ -847,14 +847,14 @@ facet_colors_2 <- c(
 
 ## Simp_s
 facet_colors_1 <- c(
-  "HDAC inh." = "#CD9600",
   "Kinase inh." = "#F8766D",
+  "HDAC inh." = "#CD9600",
   "Other" = "#7CAE00",
-  "E3 ligase ligands" = "#00A9FF",
-  "Methyltr. inh." = "#FF61CC"    ,
+  "Small molecule" = "#00BE67",
   "Chemo drug"  = "#00BFC4",
+  "E3 ligase ligands" = "#00A9FF",
   "PARP inh." = "#C77CFF",
-  "Small molecule" = "#00BE67"
+  "Methyltr. inh." = "#FF61CC"
 )
 
 ```
@@ -1094,7 +1094,7 @@ pheatmap(
              seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
   cluster_rows = TRUE,
   cluster_cols = TRUE,
-  main = paste0("Hierarchical Clustering of log2FC for top ", n_compounds, " compounds"),
+  main = paste0("Hierarchical Clustering of log2FC for all compounds"),
   na_col = "grey80",
   show_rownames = FALSE,
   show_colnames = FALSE,
@@ -1111,6 +1111,73 @@ ggsave(
     height = 7
 )
 ```
+
+```{r, fig.width=14}
+n_compounds <- length(compound_ranked_regulated)
+selected_compounds <- compound_ranked_regulated[1:n_compounds]
+
+heatmap_data <- doseresponse_log2FC %>%
+  filter(!is.na(Genes), compound %in% selected_compounds) %>% 
+  mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
+  select(Genes, compound_dose, log2FC) %>%
+  pivot_wider(names_from = compound_dose, values_from = log2FC) 
+
+heatmap_data
+
+heatmap_data_matrix <- heatmap_data %>%
+  column_to_rownames("Genes") %>%
+  .[rowSums(. == -Inf, na.rm = TRUE) == 0 & rowSums(is.na(.)) < ncol(.), ] %>%
+  mutate(
+    across(
+      everything(),  
+      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
+      )
+    ) %>%
+  as.matrix()
+
+conc_colnames <- heatmap_data %>%
+  select(-Genes) %>%
+  colnames() %>%
+  unique()
+
+compound_group <- data.frame(
+  compound = rep(selected_compounds, each = 5)
+) %>%
+  left_join(compounds_with_MoA %>% select(compound, Type_simp_s),
+            by = "compound") %>%
+  select(-compound)
+rownames(compound_group) <- colnames(heatmap_data_matrix)
+
+subset_colors <- list(Type = facet_colors_1[names(facet_colors_1) %in% unique(compound_group$Type)])
+
+colnames(compound_group) <- "Type"
+
+# Plot
+pheatmap(
+  heatmap_data_matrix,
+  color = colorRampPalette(c("blue", "white", "red"))(100),
+  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
+             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  main = paste0("Hierarchical Clustering of log2FC for all compounds"),
+  na_col = "grey80",
+  show_rownames = FALSE,
+  show_colnames = FALSE,
+  annotation_col = compound_group, 
+  annotation_colors = subset_colors,
+  #annotation_names_col = FALSE, 
+  legend_labels = c("Type") 
+)
+
+ggsave(
+    filename = "plots/all_compounds_all_concentrations_stringent.png",
+    dpi = 300,
+    width = 14,
+    height = 7
+)
+```
+
 
 ### compared to baseline heatmap 
 ```{r, fig.width=14}
@@ -1277,219 +1344,7 @@ In the paper GO term enrichment analysis was performed for each drug individuall
 A second GO term enrichtment analysis was done(P value cut-off, 0.05; P value correction, FDR approach; Subontology, Molecular Function; whole H. sapiens database as background)
 
 Either clusterProfiler or topGO for GO term enrichtment.
-### Marloes (all annotations)
-```{r}
-all_genes <- doseresponse_log2FC %>% pull(Genes) %>% unique()
-
-gene_ids <- bitr(all_genes, fromType="SYMBOL", toType="ENTREZID", OrgDb=org.Hs.eg.db)
-
-go_slim <- enrichGO(gene          = gene_ids$ENTREZID,
-                    OrgDb         = org.Hs.eg.db,
-                    keyType       = "ENTREZID",
-                    ont           = "BP", # Biological Process
-                    readable      = TRUE,
-                    pool          = TRUE)
-go_slim_df <- as.data.frame(go_slim)
-
-go_slim_df %>% arrange(desc(Count)) 
-
-#go_slim_simp <- clusterProfiler::simplify(
-#  go_slim,
-#  cutoff = 0.3,
-#  by = "p.adjust",
-#  select_fun = min,
-#  measure = "Wang"
-#)
-
-#go_slim_simp_df <- as.data.frame(go_slim_simp)
-
-go_long <- go_slim_df %>%
-  select(ID, Description, geneID, Count) %>%
-  separate_rows(geneID, sep = "/") %>%
-  mutate(Genes = geneID) %>%
-  select(Genes, ID, Description, Count)
-  #rename(GeneSymbol = geneID,
-  #       GO_Category_ID = ID,
-  #       GO_Category_Description = Description)
-
-# Check result
-go_long %>% select(ID) %>% unique() %>% pull() %>% length()
-```
-
-
-```{r}
-GO_group_biggest <- go_long %>%
-  group_by(Genes) %>%
-  slice_max(order_by = Count, n=1, with_ties = FALSE) %>%
-  arrange(desc(Count)) %>%
-  select(-ID,Count)
-
-#GO_group_biggest %>% pull(Description) %>% table()
-```
-
-### heatmap with annotated genes
-```{, fig.width=14}
-selected_dose <- 10000
-
-heatmap_full <- doseresponse_log2FC %>%
-  filter(dose == selected_dose) %>%
-  select(Genes, compound, log2FC) %>%
-  pivot_wider(names_from = compound, values_from = log2FC) 
-
-heatmap_full_matrix <- heatmap_full %>%
-  filter(!is.na(Genes)) %>%
-  distinct(Genes, .keep_all = TRUE) %>%
-  column_to_rownames("Genes") %>%
-  mutate(
-    across(
-      everything(),  
-      ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
-      )
-    ) %>%
-  as.matrix()
-
-col_annotation_full <- data.frame(
-  compound = colnames(heatmap_full_matrix)
-  ) %>%
-  left_join(compounds_with_MoA %>% select(compound, Type_simp),
-            by = "compound") %>%
-  select(-compound)
-rownames(col_annotation_full) <- colnames(heatmap_full_matrix)
-
-colnames(col_annotation_full) <-"Type"
-
-col_annotation_full
-
-row_annotation <- data.frame(
-  Genes = rownames(heatmap_full_matrix)
-) %>%
-  left_join(GO_group_biggest %>% select(Genes, Description),
-            by = "Genes") %>%
-  column_to_rownames("Genes") %>%
-  mutate(Description = case_when(
-    is.na(Description) ~ "NA",
-    TRUE ~ Description
-    )
-  )
-
-pheatmap(
-  heatmap_full_matrix,
-  color = colorRampPalette(c("blue", "white", "red"))(100),
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
-  main = paste0("Hierarchical Clustering of log2FC ", selected_dose, " (nm)"),
-  na_col = "grey80",
-  show_rownames = F,  # Remove row labels
-  show_colnames = F,   # Remove column labels
-  annotation_col = col_annotation_full,
-  #legend_labels = "Type",
-  annotation_row = row_annotation
-)
-```
-
-### FIXME
-mssing variable top50_total 
-```{}
-genes <- rownames(top50_total)
-gene_entrez <- mapIds(
-  org.Hs.eg.db,
-  keys = genes,
-  column = "ENTREZID",
-  keytype = "SYMBOL",
-  multiVals = "first"
-)
-kegg_top <-  enrichKEGG(gene = gene_entrez, 
-                                  organism = "hsa")
-
-gene_to_pathway <- data.frame(
-  Gene = unlist(strsplit(kegg_top$geneID, "/")),
-  Pathway = rep(kegg_top$subcategory, lengths(strsplit(kegg_top$geneID, "/")))
-)
-
-
-gene_to_pathway$Gene <- mapIds(
-  org.Hs.eg.db,
-  keys = gene_to_pathway$Gene,
-  column = "SYMBOL",
-  keytype = "ENTREZID",
-  multiVals = "first"
-)
-
-
-# Ensure all genes in the expression matrix are mapped
-gene_to_pathway <- merge(
-  data.frame(Gene = genes),
-  gene_to_pathway,
-  by = "Gene",
-  all.x = TRUE
-)
-
-# Fill NA pathways for unmapped genes
-gene_to_pathway$Pathway[is.na(gene_to_pathway$Pathway)] <- "None"
-gene_to_pathway_unique_50 <- gene_to_pathway %>%
-  distinct(Gene, .keep_all = TRUE)
-```
-
 ### Thalidomide
-#### Remove rows containing only -Inf or NA
-I removed all rows (Genes) that have only -Inf or NA:
-```{}
-selected_compounds <- 'Thalidomide'
-heatmap_data <- doseresponse_log2FC %>%
-  filter(!is.na(Genes), compound %in% selected_compounds) %>% 
-  mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
-  select(Genes, compound_dose, log2FC) %>%
-  pivot_wider(names_from = compound_dose, values_from = log2FC) 
-
-heatmap_data
-
-heatmap_data_matrix <- heatmap_data %>%
-  column_to_rownames("Genes") %>%
-  .[!apply(., 1, function(x) all(is.infinite(x) | is.na(x))), ] %>%
-  mutate(
-    across(
-      everything(),
-     ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
-    )
-  ) %>%
-  #mutate(
-  #  across(
-  #    everything(),  
-  #    ~ replace(replace(., is.infinite(.) & . < 0, min(.[is.finite(.)], na.rm = TRUE)), is.na(.), 0)
-  #    )
-  #  ) %>%
-  as.matrix()
-
-conc_colnames <- heatmap_data %>%
-  select(-Genes) %>%
-  colnames() %>%
-  unique()
-
-compound_group <- data.frame(
-  compound = rep(selected_compounds, each = 5)
-)
-rownames(compound_group) <- colnames(heatmap_data_matrix)
-
-
-# Plot
-pheatmap::pheatmap(
-  heatmap_data_matrix,
-  color = colorRampPalette(c("blue", "white", "red"))(100),
-  breaks = unique(c(seq(min(heatmap_data_matrix, na.rm = TRUE), 0, length.out = 51), 
-             seq(0, max(heatmap_data_matrix, na.rm = TRUE), length.out = 51))),
-  cluster_rows = TRUE,
-  cluster_cols = TRUE,
-  main = paste0("Hierarchical Clustering of the proteins for ", selected_compounds),
-  na_col = "grey80",
-  show_rownames = FALSE,
-  show_colnames = TRUE,
-  #annotation_col = compound_group, 
-  annotation_names_col = FALSE
-)
-
-```
-
-#### Remove all rows with any -Inf or NA
 ```{r}
 selected_compounds <- 'Thalidomide'
 heatmap_data <- doseresponse_log2FC %>%
@@ -1590,6 +1445,7 @@ p <- pheatmap(
 Visually clusters 2 and three look the most down and upregulated, respectively
 ```{r}
 cluster_gene_list <- list(
+  #thalomide_clust1_down = names(cluster_assignments[cluster_assignments == 1]),
   thalomide_clust2_down = names(cluster_assignments[cluster_assignments == 2]),
   thalomide_clust3_up = names(cluster_assignments[cluster_assignments == 3])
 )
@@ -1627,112 +1483,7 @@ pheatmap(
 )
 ```
 
-
-Stopped here for today
-### start here
-```{r}
-go_results_list <- list()
-
-for(i in 1:3) {
-  
-  cluster_name <- paste0("Cluster_", i)
-  gene_list_symbol <- merged_gene_list[[i]]
-  
-  # Map gene symbols to Entrez IDs
-  gene_list_entrez <- bitr(
-    gene_list_symbol,
-    fromType = "SYMBOL",
-    toType = "ENTREZID",
-    OrgDb = org.Hs.eg.db
-  )
-  
-  if (is.null(gene_list_entrez) || nrow(gene_list_entrez) == 0) {
-    message(paste0(cluster_name, ": No genes mapped — skipping"))
-    next
-  }
-  
-  # Safe GO enrichment
-  go_enrich <- tryCatch({
-    enrichGO(
-      gene          = gene_list_entrez$ENTREZID,
-      OrgDb         = org.Hs.eg.db,
-      keyType       = "ENTREZID",
-      ont           = "BP",
-      pAdjustMethod = "BH"
-    )
-  }, error = function(e) {
-    message(paste0(cluster_name, ": GO enrichment failed — skipping"))
-    return(NULL)
-  })
-  
-  if (is.null(go_enrich) || nrow(go_enrich) == 0) {
-    message(paste0(cluster_name, ": No significant GO terms — skipping plot"))
-    next
-  }
-  
-  # Store result
-  go_results_list[[cluster_name]] <- go_enrich
-  
-  # Plot
-  p <- barplot(go_enrich, showCategory = 10) + 
-       ggtitle(paste0(cluster_name, " GO Enrichment"))
-  
-  print(p)
-  
-}
-
-
-```
-
-
-```{r, fig.height=10, fig.width=10}
-library(clusterProfiler)
-library(dplyr)
-library(ggplot2)
-library(forcats)
-
-# Collect data from all clusters
-plot_data <- data.frame()
-
-for(i in 1:10){
-  
-  cluster_name <- paste0("Cluster_", i)
-  
-  go_enrich <- go_results_list[[cluster_name]]
-  print(nrow(go_enrich))
-  if (is.null(go_enrich) || nrow(go_enrich) == 0) next
-  
-  # Extract GO term and Count of genes in gene set
-  df <- go_enrich@result %>%
-    filter(p.adjust < 0.05) %>%  # Filter significant terms
-    mutate(Cluster = cluster_name) %>%
-    select(Cluster, Description, Count, p.adjust) %>%
-    arrange(p.adjust) %>%  # Sort by p.adjust (or you can change this to Count)
-    head(10)  # Take the top 10 rows after sorting
-  
-  plot_data <- bind_rows(plot_data, df)
-}
-
-# Plot
-ggplot(plot_data, aes(x = Cluster, y = Count, fill = Description)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  theme_bw() +
-  scale_fill_brewer(palette = "Paired") +
-  labs(
-    y = "Gene Count",
-    x = "Cluster",
-    fill = "GO Term",
-    title = "GO Enrichment across Clusters"
-  ) +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    plot.title = element_text(hjust = 0.5)
-  )
-
-
-```
-
-### GO enrichment
+#### GO enrichment
 ```{r}
 # Example cluster assignments: Cluster 2 and 3
 cluster2_genes <- cluster_gene_list$thalomide_clust2_down
@@ -1842,9 +1593,10 @@ ggsave(
 ```
 
 
-#### Pemrametostat 
-```{}
+### Pemrametostat 
+```{r}
 selected_compounds <- 'Pemrametostat'
+
 heatmap_data <- doseresponse_log2FC %>%
   filter(!is.na(Genes), compound %in% selected_compounds) %>% 
   mutate(compound_dose = paste(compound, dose, sep = "_")) %>%
@@ -1855,7 +1607,7 @@ heatmap_data
 
 heatmap_data_matrix <- heatmap_data %>%
   column_to_rownames("Genes") %>%
-  .[rowSums(. == -Inf) == 0, ] %>%
+  .[rowSums(. == -Inf | is.na(.)) == 0, ] %>%
   mutate(
     across(
       everything(),
@@ -1896,11 +1648,10 @@ p <- pheatmap::pheatmap(
   #annotation_col = compound_group, 
   annotation_names_col = FALSE
 )
+
 ```
 
-
-
-```{}
+```{r}
 k_clusters <- 6
 row_hclust <- p$tree_row
 cluster_assignments <- cutree(row_hclust, k = k_clusters)
@@ -1937,26 +1688,28 @@ p <- pheatmap(
   annotation_colors = cluster_colors
 )
 
-
 ```
 
+
 Visually clusters 2 and three look the most down and upregulated, respectively
-```{}
+```{r}
 cluster_gene_list <- list(
-  thalomide_clust2_down = names(cluster_assignments[cluster_assignments == 1]),
-  thalomide_clust3_up = names(cluster_assignments[cluster_assignments == 2])
+  Pemrametostat_clust1_up = names(cluster_assignments[cluster_assignments == 1]),
+  Pemrametostat_clust2_down = names(cluster_assignments[cluster_assignments == 2]),
+  Pemrametostat_clust3_down = names(cluster_assignments[cluster_assignments == 3])
 )
 
 length(unlist(cluster_gene_list))
 ```
 
 Replot with only selected clusters
-```{}
+```{r}
 #cluster annotation subset
 row_annotation_subset <- row_annotation[dplyr::intersect(rownames(row_annotation), unlist(cluster_gene_list)),, drop=FALSE]
 
 cluster_colors_subset <- list(
   Cluster = c(
+    "3" = "#0072B2",
     "2" = "#56B4E9",
     "1" = "#CC79A7"
   )
@@ -1978,6 +1731,93 @@ pheatmap(
   annotation_names_row = TRUE,
   annotation_colors = cluster_colors_subset
 )
+```
+
+#### GO enrichment
+```{r}
+# Example cluster assignments: Cluster 2 and 3
+cluster1_genes <- cluster_gene_list$Pemrametostat_clust1_up
+cluster2_genes <- cluster_gene_list$Pemrametostat_clust2_down
+cluster3_genes <- cluster_gene_list$Pemrametostat_clust3_down
+
+# Convert gene symbols to Entrez IDs (assuming your gene symbols are in a vector)
+# You might want to change this if you already have Entrez IDs or need a different mapping.
+gene_symbols <- c(cluster1_genes, cluster2_genes,cluster3_genes)
+
+# Convert to Entrez IDs using org.Hs.eg.db (human example)
+gene_entrez_ids <- bitr(gene_symbols, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+
+# Separate into cluster 2 and cluster 3 gene Entrez IDs
+cluster1_entrez <- gene_entrez_ids$ENTREZID[gene_entrez_ids$SYMBOL %in% cluster1_genes]
+cluster2_entrez <- gene_entrez_ids$ENTREZID[gene_entrez_ids$SYMBOL %in% cluster2_genes]
+cluster3_entrez <- gene_entrez_ids$ENTREZID[gene_entrez_ids$SYMBOL %in% cluster3_genes]
+```
+
+```{r}
+# Perform GO enrichment analysis for cluster 2
+go_cluster1 <- enrichGO(
+  gene = cluster1_entrez,
+  OrgDb = org.Hs.eg.db,
+  ont = "BP",  # "BP" for Biological Process, you can also use "MF" for Molecular Function or "CC" for Cellular Component
+  pAdjustMethod = "BH",
+  qvalueCutoff = 0.05,
+  readable = TRUE
+)
+```
+
+```{r}
+# Perform GO enrichment analysis for cluster 2
+go_cluster2 <- enrichGO(
+  gene = cluster2_entrez,
+  OrgDb = org.Hs.eg.db,
+  ont = "BP",  # "BP" for Biological Process, you can also use "MF" for Molecular Function or "CC" for Cellular Component
+  pAdjustMethod = "BH",
+  qvalueCutoff = 0.05,
+  readable = TRUE
+)
+```
+
+
+```{r}
+# Perform GO enrichment analysis for cluster 3
+go_cluster3 <- enrichGO(
+  gene = cluster3_entrez,
+  OrgDb = org.Hs.eg.db,
+  ont = "BP",
+  pAdjustMethod = "BH",
+  qvalueCutoff = 0.05,
+  readable = TRUE
+)
+```
+
+```{r, fig.width=14}
+barplot(go_cluster1, showCategory = 15, title = paste0("Top GO terms for cluster 1"))
+
+dotplot(go_cluster1, showCategory = 15, title = paste0("Top GO terms for cluster 1"))
+
+emapplot(pairwise_termsim(go_cluster1))
+
+treeplot(pairwise_termsim(go_cluster1))
+```
+
+```{r, fig.width=14}
+barplot(go_cluster2, showCategory = 15, title = paste0("Top GO terms for cluster 2"))
+
+dotplot(go_cluster2, showCategory = 15, title = paste0("Top GO terms for cluster 2"))
+
+emapplot(pairwise_termsim(go_cluster2))
+
+treeplot(pairwise_termsim(go_cluster2))
+```
+
+```{r, fig.width=14}
+barplot(go_cluster3, showCategory = 15, title = paste0("Top GO terms for cluster 3"))
+
+dotplot(go_cluster3, showCategory = 15, title = paste0("Top GO terms for cluster 3"))
+
+emapplot(pairwise_termsim(go_cluster3))
+
+treeplot(pairwise_termsim(go_cluster3))
 ```
 
 
